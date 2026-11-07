@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://*.supabase.co; img-src data:; base-uri 'none'; form-action 'none'">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Business HQ">
-<title>Business HQ · Gold Edition · Release Candidate</title>
+<title>Business HQ · Gold Edition · Cloud Team</title>
 <style>
 :root{--bg:#f5f3ee;--card:#fff;--tx:#1d1d1b;--mu:#6b6a64;--ln:#e2dfd6;--ac:#c2410c;--ok:#15803d;--wa:#b45309;--bad:#b91c1c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141413;--card:#1f1f1d;--tx:#f1efe8;--mu:#a09e95;--ln:#33322e;--ac:#fb923c;--ok:#4ade80;--wa:#fbbf24;--bad:#f87171}}
@@ -185,6 +185,16 @@ let fourthwallLastCheck=0;
 let lastReportsAutoCheck=0;
 let draftText="",draftMessage="";
 let aiDeskMessage="";
+let aiCloud={loaded:false,error:"",items:[],busy:false};
+async function loadAiCloud(){
+ if(!S||!unlocked||demo||!owner()){aiCloud={loaded:true,error:"Owner sign-in required",items:[],busy:false};return}
+ const b=encodeURIComponent(biz);
+ try {
+  const r=await call("/rest/v1/hq_ai_handoffs?select=id,business,worker,goal,result,status,created_at&business=eq."+b+"&order=created_at.desc&limit=100");
+  aiCloud=r.ok&&Array.isArray(r.j)?{loaded:true,error:"",items:r.j,busy:false}:{loaded:true,error:r.status===404?"Cloud storage is not installed yet. The database setup is needed.":"Cloud storage unavailable (HTTP "+r.status+")",items:[],busy:false};
+ }catch(e){aiCloud={loaded:true,error:"Could not reach AI cloud storage",items:[],busy:false}}
+}
+
 let aiSelected="chatgpt";
 let aiGoalDraft="";
 let aiResultDraft="";
@@ -323,6 +333,13 @@ function home(){
 }
 function team(){
  const L=D.tasks.filter(t=>t.business==biz);
+ const cloud=aiCloud.items.filter(x=>x.business===biz);
+ const cloudPanel=`<div class="card"><b>☁ Secure AI Team handoffs</b><p class="mutedline">Owner-only Supabase storage. Cloud saving stores briefs and review notes, but does not send work to Claude or Grok or approve any external action.</p>
+ <div class="row"><button data-a="aicloudrefresh|">Refresh cloud</button><button data-a="aicloudsave|">Save current draft to cloud</button></div>
+ <p class="mutedline" role="status">${esc(aiCloud.error||(!aiCloud.loaded?"Open AI Team to load cloud records":cloud.length+" saved cloud handoff(s)"))}</p>
+ ${cloud.slice(0,25).map(item=>`<div class="ai-assignment"><b>${esc((AI_ROLE_INFO[item.worker]||{}).name||item.worker)} · ${esc(String(item.goal||"").slice(0,105))}</b><p class="mutedline">${esc(item.status||"draft")} · Cloud-saved, not executed</p><div class="row"><button data-a="aicloudload|${esc(item.id)}">Load</button><button data-a="aiclouddelete|${esc(item.id)}">Delete cloud copy</button></div></div>`).join("")}
+ </div>`;
+
  const saved=aiDeskRead();
  const safeWorker=AI_ROLE_INFO[aiSelected]?aiSelected:"chatgpt";
  const brief=aiGoalDraft.trim()?aiBrief(safeWorker,aiGoalDraft.trim()):"Enter an assignment and tap Copy AI brief to prepare your handoff.";
@@ -331,7 +348,7 @@ function team(){
  const queueMarkup=assigned.map((item,i)=>`<div class="ai-assignment"><div class="ai-assignment-head"><b>#${item.priority} · ${esc(item.title)}</b><span class="chip">${esc(AI_ROLE_INFO[item.worker].name)}</span></div><p class="hint">Prepared · Not sent · Owner approval required before external changes</p><button data-a="aiassign|${i}">Load assignment</button></div>`).join("");
  return BIZ()+`<div class="hero"><div class="eyebrow">YOUR DIGITAL TEAM</div><h2>AI Team · Managed by ChatGPT</h2><p>I choose who handles each job. You review important decisions, spending and publishing.</p></div>
  <div class="card"><b>Connection status</b><p class="mutedline">These are manual AI handoffs, not live API connections. Nothing is transmitted to Claude, Grok or ChatGPT until you choose to copy and paste a brief. No paid AI usage, publishing, ads or purchases are enabled.</p><div class="row"><button data-a="tab|tasks">View tracked tasks (${L.length})</button><button data-a="tab|appr">Approvals</button></div></div>
- <div class="card"><b>AI Manager's assignments</b><p class="mutedline">ChatGPT coordinates the queue. Claude handles development; Grok handles marketing; ChatGPT handles finances and publishing planning. These are prepared handoffs, not live AI execution.</p>${queueMarkup}</div>
+ ${cloudPanel}<div class="card"><b>AI Manager's assignments</b><p class="mutedline">ChatGPT coordinates the queue. Claude handles development; Grok handles marketing; ChatGPT handles finances and publishing planning. These are prepared handoffs, not live AI execution.</p>${queueMarkup}</div>
  <div class="card"><b>1 · Prepare the next handoff</b><p class="mutedline">Pick a queued assignment above, or describe a new task and let ChatGPT choose the right worker.</p><div class="ai-role-grid">${workerControls}</div><p class="mutedline"><b>${esc(AI_ROLE_INFO[safeWorker].name)}:</b> ${esc(AI_ROLE_INFO[safeWorker].focus)}</p>
  <label>Starting point<select id="ai_preset"><option value="general" ${aiSelectedPreset==="general"?"selected":""}>General assignment</option><option value="build" ${aiSelectedPreset==="build"?"selected":""}>Review Business HQ</option><option value="marketing" ${aiSelectedPreset==="marketing"?"selected":""}>Working Bones marketing</option><option value="publishing" ${aiSelectedPreset==="publishing"?"selected":""}>Funny Bones Kids</option></select></label>
  <div class="ai-team-actions"><button data-a="aipreset|">Use selected starting point</button></div>
@@ -514,8 +531,32 @@ CONSTRAINTS: Draft and analyze only. Do not publish, buy, spend, access private 
 
 This is a manual copy; Business HQ has not contacted an AI service.`;
 }
+async function aiCloudAction(action,id){
+ if(!S||!unlocked||!owner()){aiDeskMessage="Working Bones or Funny Bones owner sign-in required.";render();return}
+ if(action==="aicloudrefresh"){await loadAiCloud();render();return}
+ if(action==="aicloudsave"){
+  aiDraftFromInputs();if(!aiGoalDraft.trim()){aiDeskMessage="Enter a task before saving to the cloud.";render();return}
+  const worker=AI_ROLE_INFO[aiSelected]?aiSelected:"chatgpt";
+  const r=await call("/rest/v1/hq_ai_handoffs",{method:"POST",headers:{Prefer:"return=minimal"},body:{business:biz,worker,goal:aiGoalDraft.trim(),result:aiResultDraft.trim(),status:aiResultDraft.trim()?"ready_for_review":"draft"}});
+  aiDeskMessage=r.ok?"Saved to owner-only Supabase storage. This did not contact any AI or approve an action.":"Cloud save failed: "+err(r);
+  if(r.ok)await loadAiCloud();render();return;
+ }
+ const item=aiCloud.items.find(v=>v.id===id&&v.business===biz);
+ if(!item){aiDeskMessage="Cloud handoff not found. Refresh the list.";render();return}
+ if(action==="aicloudload"){
+  aiSelected=AI_ROLE_INFO[item.worker]?item.worker:"chatgpt";aiGoalDraft=item.goal;aiResultDraft=item.result||"";
+  aiDeskMessage="Cloud handoff loaded. Changes can be saved as a new cloud draft.";render();return;
+ }
+ if(action==="aiclouddelete"){
+  if(!confirm("Delete this saved cloud handoff? This cannot be undone."))return;
+  const r=await call("/rest/v1/hq_ai_handoffs?id=eq."+encodeURIComponent(id)+"&business=eq."+encodeURIComponent(biz),{method:"DELETE"});
+  aiDeskMessage=r.ok?"Cloud copy deleted. Local drafts are unchanged.":"Cloud delete failed: "+err(r);
+  if(r.ok)await loadAiCloud();render();return;
+ }
+}
 async function onclick(e){const t=e.target.closest("[data-a]");if(!t||t.tagName=="SELECT")return;const[a,x,y]=t.dataset.a.split("|");msg="";
 try{
+if(["aicloudrefresh","aicloudsave","aicloudload","aiclouddelete"].includes(a)){await aiCloudAction(a,x);return}
 if(a==="airole"){
  aiDraftFromInputs();if(AI_ROLE_INFO[x])aiSelected=x;render();return;
 }
@@ -624,7 +665,7 @@ if(a=="savebudget"){const b={};for(const k of ["ads","tools","operations","other
  }
  else if(a=="savedraft"){draftText=$("#m_output")?.value||"";LS.set("hq_marketing_draft_"+biz,draftText);draftMessage="Saved in this browser only."}
  else if(a=="loaddraft"){draftText=LS.get("hq_marketing_draft_"+biz)||"";draftMessage=draftText?"Saved draft loaded.":"No saved draft for this business."}
- else if(a=="tab"){tab=x;if(x==="reports"&&!demo&&S&&unlocked&&biz==="wb")await checkFourthwallApi()}else if(a=="biz"){biz=x;if(tab==="reports"&&x==="wb"&&!demo&&S&&unlocked)await checkFourthwallApi()}else if(a=="form"){form=!form}
+ else if(a=="tab"){tab=x;if(x==="team"&&!demo&&S&&unlocked){await loadAiCloud()} if(x==="reports"&&!demo&&S&&unlocked&&biz==="wb")await checkFourthwallApi()}else if(a=="biz"){biz=x;aiCloud={loaded:false,error:"",items:[],busy:false};if(tab==="team"&&!demo&&S&&unlocked){await loadAiCloud()} if(tab==="reports"&&x==="wb"&&!demo&&S&&unlocked)await checkFourthwallApi()}else if(a=="form"){form=!form}
 else if(a=="cfg"){const u=$("#u").value.trim().replace(/\/$/,""),k=$("#k").value.trim();if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(u)){msg="Project URL should look like https://abcd.supabase.co";return render(msg)}const b=badKey(k);if(b){msg=b;K="";return render()}U=u;K=k;LS.set("hq_url",U);LS.set("hq_key",K)}
 else if(a=="login"){const em=$("#em").value.trim(),pw=$("#pw").value;const r=await call("/auth/v1/token?grant_type=password",{method:"POST",body:{email:em,password:pw},anon:true});if(!r.ok){msg="Sign-in failed: "+err(r)}else{S={at:r.j.access_token,rt:r.j.refresh_token,em};LS.set("hq_sess",JSON.stringify(S));unlocked=true;await load()}}
 else if(a=="logout"||a=="signout"){unlocked=false;S=null;LS.del("hq_sess");D={tasks:[],apprs:[],rules:[],req:[],mem:[]};fourthwallReport={loaded:false,ok:false,row:null,error:""};fourthwallApiTest={state:"idle",message:"Not checked yet.",count:null,statuses:null};fourthwallLastCheck=0}
