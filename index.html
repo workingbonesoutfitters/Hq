@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://*.supabase.co; img-src data:; base-uri 'none'; form-action 'none'">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Business HQ">
-<title>Business HQ · Gold Edition · Cloud Team</title>
+<title>Business HQ · Gold Edition · Stability Review</title>
 <style>
 :root{--bg:#f5f3ee;--card:#fff;--tx:#1d1d1b;--mu:#6b6a64;--ln:#e2dfd6;--ac:#c2410c;--ok:#15803d;--wa:#b45309;--bad:#b91c1c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141413;--card:#1f1f1d;--tx:#f1efe8;--mu:#a09e95;--ln:#33322e;--ac:#fb923c;--ok:#4ade80;--wa:#fbbf24;--bad:#f87171}}
@@ -169,6 +169,8 @@ main,.card,.statgrid,.stat,.empire-grid,.empire-card{min-width:0}
   text-overflow: clip;
   touch-action: manipulation;
 }
+input,select,textarea{font-size:16px!important}
+body{min-height:100vh;min-height:100dvh}
 </style></head><body>
 <header><h1>Business HQ <small>GOLD EDITION · V3.0</small></h1></header>
 <main id="app"><div class="hero"><div class="eyebrow">BUSINESS HQ · GOLD EDITION</div><h2>One headquarters. Two businesses.</h2><p>A simple home for your AI Manager, Marketing, AI Team, and Approvals.</p><div class="gold-beam"></div></div><h2>Your four departments</h2><div class="quickgrid"><div class="quick"><div class="symbol">✧</div><strong>AI Manager</strong><span>Give one instruction and review the plan</span></div><div class="quick"><div class="symbol">✦</div><strong>Marketing</strong><span>Prepare campaigns and drafts</span></div><div class="quick"><div class="symbol">◇</div><strong>AI Team</strong><span>See who handles each job</span></div><div class="quick"><div class="symbol">✓</div><strong>Approvals</strong><span>Review important decisions</span></div></div><section aria-label="Empire Overview preview"><div class="empire-head"><div><div class="eyebrow">THE EMPIRE OVERVIEW</div><h2>Both businesses. One screen.</h2></div></div><div class="empire-grid"><article class="empire-card"><div class="empire-tag">01 · Apparel</div><div class="empire-name">Working Bones Outfitters</div><div class="empire-gauge" style="--score:0"><div class="empire-gauge-inner"><b>—</b><small>NO DATA</small></div></div><div class="empire-data"><div><b>—</b><small>Revenue</small></div><div><b>—</b><small>Profit</small></div></div><p class="empire-note">Awaiting verified sales data</p></article><article class="empire-card"><div class="empire-tag">02 · Publishing</div><div class="empire-name">Funny Bones Kids</div><div class="empire-gauge" style="--score:0"><div class="empire-gauge-inner"><b>—</b><small>NO DATA</small></div></div><div class="empire-data"><div><b>—</b><small>Revenue</small></div><div><b>—</b><small>Profit</small></div></div><p class="empire-note">Awaiting verified sales data</p></article></div></section><div class="card" style="margin-top:18px"><b>Preview only</b><p class="mutedline">This file preview shows the design; open the hosted website to use the working app. If the buttons don't respond, the preview is blocking JavaScript. A securely hosted HTTPS version is required to test the interactive app in Safari. No ads, purchases, or publishing are enabled.</p></div></main><nav id="nav"></nav>
@@ -186,11 +188,13 @@ let lastReportsAutoCheck=0;
 let draftText="",draftMessage="";
 let aiDeskMessage="";
 let aiCloud={loaded:false,error:"",items:[],busy:false};
+let aiEditId=null;
+const cloudRows=r=>Array.isArray(r.j)?r.j:[];
 async function loadAiCloud(){
  if(!S||!unlocked||demo||!owner()){aiCloud={loaded:true,error:"Owner sign-in required",items:[],busy:false};return}
  const b=encodeURIComponent(biz);
  try {
-  const r=await call("/rest/v1/hq_ai_handoffs?select=id,business,worker,goal,result,status,created_at&business=eq."+b+"&order=created_at.desc&limit=100");
+  const r=await call("/rest/v1/hq_ai_handoffs?select=id,business,worker,goal,result,status,created_at,updated_at&business=eq."+b+"&order=created_at.desc&limit=100");
   aiCloud=r.ok&&Array.isArray(r.j)?{loaded:true,error:"",items:r.j,busy:false}:{loaded:true,error:r.status===404?"Cloud storage is not installed yet. The database setup is needed.":"Cloud storage unavailable (HTTP "+r.status+")",items:[],busy:false};
  }catch(e){aiCloud={loaded:true,error:"Could not reach AI cloud storage",items:[],busy:false}}
 }
@@ -289,10 +293,23 @@ async function call(path,o={},retry=true){const h={apikey:K,"Content-Type":"appl
 const r=await fetch(U+path,{method:o.method||"GET",headers:{...h,...(o.headers||{})},body:o.body?JSON.stringify(o.body):undefined});
 if(r.status==401&&S&&retry&&!o.anon&&await refresh())return call(path,o,false);
 let j=null;try{j=await r.json()}catch(e){}return{ok:r.ok,status:r.status,j}}
-async function refresh(){if(!S)return false;const r=await fetch(U+"/auth/v1/token?grant_type=refresh_token",{method:"POST",headers:{apikey:K,"Content-Type":"application/json"},body:JSON.stringify({refresh_token:S.rt})});if(!r.ok){S=null;unlocked=false;LS.del("hq_sess");return false}const j=await r.json();S={at:j.access_token,rt:j.refresh_token,em:S.em};LS.set("hq_sess",JSON.stringify(S));return true}
+let refreshing=null;
+function refresh(){
+ if(!S)return Promise.resolve(false);
+ if(refreshing)return refreshing;
+ const old=S,rt=S.rt;
+ refreshing=(async()=>{try{
+  const r=await fetch(U+"/auth/v1/token?grant_type=refresh_token",{method:"POST",headers:{apikey:K,"Content-Type":"application/json"},body:JSON.stringify({refresh_token:rt})});
+  if([400,401,403].includes(r.status)){if(S===old){S=null;unlocked=false;LS.del("hq_sess")}return false}
+  if(!r.ok)return false;
+  const j=await r.json();if(!j.access_token||!j.refresh_token)return false;
+  S={at:j.access_token,rt:j.refresh_token,em:old.em};LS.set("hq_sess",JSON.stringify(S));return true;
+ }catch(e){return false}finally{refreshing=null}})();
+ return refreshing;
+}
 const rpc=(n,b)=>call("/rest/v1/rpc/"+n,{method:"POST",body:b});
 const err=r=>r.j&&(r.j.message||r.j.msg||r.j.error_description)||("HTTP "+r.status);
-async function load(){if(!S||!unlocked)return;const[a,b,c,d,e]=await Promise.all([call("/rest/v1/tasks?select=*&order=created_at.desc&limit=200"),call("/rest/v1/approvals?select=*&decision=eq.pending&order=created_at.desc"),call("/rest/v1/approval_rules?select=*"),call("/rest/v1/publish_requires?select=*"),call("/rest/v1/memberships?select=business,role")]);
+async function load(){if(!S||!unlocked)return;let a,b,c,d,e;try{[a,b,c,d,e]=await Promise.all([call("/rest/v1/tasks?select=*&order=created_at.desc&limit=200"),call("/rest/v1/approvals?select=*&decision=eq.pending&order=created_at.desc"),call("/rest/v1/approval_rules?select=*"),call("/rest/v1/publish_requires?select=*"),call("/rest/v1/memberships?select=business,role")]);}catch(e){msg="Could not connect to Supabase. Your changes were not submitted.";return}
 if(!a.ok){msg="Could not load: "+err(a);render();return}
 D={tasks:a.j,apprs:b.ok?b.j:[],rules:c.ok?c.j:[],req:d.ok?d.j:[],mem:e.ok?e.j:[]};if(!biz||!D.mem.find(m=>m.business==biz))biz=(D.mem[0]||{}).business||"";
 const canReadRevenue=D.mem.some(m=>m.business==="wb"&&m.role==="owner");
@@ -316,9 +333,9 @@ const BIZ=()=>D.mem.length?`<div class="row" style="margin:0 0 8px">${D.mem.map(
 const stat=(n,v,sub)=>`<div class="stat"><small>${esc(n)}</small><div class="number">${v}</div><small>${esc(sub)}</small></div>`;
 function ownerSnapshot(){
  const report=biz==="wb"&&fourthwallReport.ok?fourthwallReport.row:null;
- const confirmed=report&&Number.isSafeInteger(Number(report.confirmed_real_orders))?Number(report.confirmed_real_orders):null;
- const excluded=report&&Number.isSafeInteger(Number(report.excluded_test_orders))?Number(report.excluded_test_orders):null;
- const sales=report&&Number.isFinite(Number(report.gross_revenue))?Number(report.gross_revenue):null;
+ const confirmed=report?safeCount(report.confirmed_real_orders):null;
+ const excluded=report?safeCount(report.excluded_test_orders):null;
+ const sales=report?safeAmount(report.gross_revenue):null;
  const api=biz==="wb"?fourthwallApiTest.state:"unavailable";
  const apiStatus=api==="ok"?"Connected":api==="running"?"Checking…":api==="error"?"Needs attention":"Not checked";
  return `<div class="card" style="margin-top:16px"><b>Operations snapshot</b><p class="mutedline">Owner-only reporting appears when Supabase responds. Claude and Grok are not directly connected to this app.</p>
@@ -334,7 +351,7 @@ function home(){
 function team(){
  const L=D.tasks.filter(t=>t.business==biz);
  const cloud=aiCloud.items.filter(x=>x.business===biz);
- const cloudPanel=`<div class="card"><b>☁ Secure AI Team handoffs</b><p class="mutedline">Owner-only Supabase storage. Cloud saving stores briefs and review notes, but does not send work to Claude or Grok or approve any external action.</p>
+ const cloudPanel=`<div class="card"><b>☁ Secure AI Team handoffs</b>${aiEditId?`<p class="mutedline">Editing existing cloud handoff. Saving updates it.</p>`:""}<p class="mutedline">Owner-only Supabase storage. Cloud saving stores briefs and review notes, but does not send work to Claude or Grok or approve any external action.</p>
  <div class="row"><button data-a="aicloudrefresh|">Refresh cloud</button><button data-a="aicloudsave|">Save current draft to cloud</button></div>
  <p class="mutedline" role="status">${esc(aiCloud.error||(!aiCloud.loaded?"Open AI Team to load cloud records":cloud.length+" saved cloud handoff(s)"))}</p>
  ${cloud.slice(0,25).map(item=>`<div class="ai-assignment"><b>${esc((AI_ROLE_INFO[item.worker]||{}).name||item.worker)} · ${esc(String(item.goal||"").slice(0,105))}</b><p class="mutedline">${esc(item.status||"draft")} · Cloud-saved, not executed</p><div class="row"><button data-a="aicloudload|${esc(item.id)}">Load</button><button data-a="aiclouddelete|${esc(item.id)}">Delete cloud copy</button></div></div>`).join("")}
@@ -394,7 +411,7 @@ function tasks(){const L=D.tasks.filter(t=>t.business==biz);const kinds=[...new 
 const f=form&&owner()?`<div class="card"><b>New task</b><label>Title<input id="n_t"></label><label>Instructions<textarea id="n_i" rows="3"></textarea></label><label>Department<input id="n_d" value="general"></label><label>Assign to<select id="n_w"><option value="claude">Claude</option><option value="chatgpt">ChatGPT</option><option value="grok">Grok</option></select></label><label>Category<select id="n_k" data-a="kind|">${kinds.map(k=>`<option>${k}</option>`).join("")}</select></label><label>Action<select id="n_a" data-a="act|">${acts(kinds[0])}</select></label><label>Reference (design or product id, e.g. design:cover-v1)<input id="n_r"></label><label id="n_dl" style="display:none">Depends on (completed review)<select id="n_p"></select></label><label>Estimated cost ($)<input id="n_c" type="number" step="0.01" value="0"></label><small>Worker choices create manual-relay assignments, not direct Claude or Grok API calls. Design review and publication are separate tasks. Approving a design never publishes.</small><div class="row"><button class="pri" data-a="create|">Create</button><button data-a="form|">Cancel</button></div><div class="err">${esc(msg)}</div></div>`:"";
 return BIZ()+`<div class="row" style="margin:0 0 8px"><h2 style="margin:0">Tasks</h2>${owner()?`<button class="pri" data-a="form|">+ New</button>`:""}</div><p class="mutedline">Claude and Grok tasks are manual handoffs for now. Use Copy brief on an assigned task, then paste it into that AI yourself. No paid AI API is called.</p>${msg?`<p class="mutedline" role="status">${esc(msg)}</p>`:""}${f}`+(L.length?L.map(t=>`<div class="card"><b>${esc(t.title)}</b><div style="margin-top:4px">${chip(t.worker,"")}${chip(t.status,t.status=="done"?"g":t.status=="failed"?"r":t.status=="awaiting_approval"?"w":"")}${chip(t.kind+" / "+t.action,"w")}${chip(t.mode)}${t.requires_approval?chip("approval needed","w"):""}</div><small>Attempts ${t.attempts}/${t.max_attempts} · cost $${t.actual_cost} (est. $${t.est_cost})${t.last_error?" · "+esc(t.last_error):""}</small>${["claude","grok"].includes(String(t.worker).toLowerCase())?`<div class="row"><button data-a="copyworker|${esc(t.id)}">Copy ${esc(t.worker)} brief</button></div>`:""}${["queued","awaiting_approval","approved"].includes(t.status)&&owner()?`<div class="row" style="justify-content:flex-start"><button class="no" data-a="cancel|${t.id}">Cancel task</button></div>`:""}</div>`).join(""):`<div class="card mu">No tasks for this business.</div>`)}
 const acts=k=>D.rules.filter(r=>r.kind==k).map(r=>`<option>${r.action}</option>`).join("");
-function appr(){const L=D.apprs.filter(a=>a.business==biz);return BIZ()+`<h2 style="margin-top:0">Approve</h2><div class="warn">Approving records your decision. Nothing is published, bought or changed automatically. Each approval is for one exact action, works once, and expires after 7 days.</div>`+(L.length?L.map(a=>{const t=D.tasks.find(x=>x.id==a.task_id)||{};const del=a.kind=="deletion",ph="DELETE "+a.id.slice(0,8);return`<div class="card"><b>${esc(t.title||"Task")}</b><div style="margin-top:4px">${chip(a.kind,"w")}${chip(a.action)}${a.action.startsWith("approve_")?chip("DESIGN/MANUSCRIPT REVIEW only","g"):chip("consequential","r")}</div><small>Expires ${new Date(a.expires_at).toLocaleDateString()}${a.est_cost>0?" · est. $"+a.est_cost:""}</small>${t.payload?`<div style="font-size:13px;margin-top:4px">${esc(JSON.stringify(t.payload))}</div>`:""}${del?`<label>Type <b>${ph}</b> to confirm<input id="cf_${a.id}"></label>`:""}<div class="row"><button class="ok" data-a="dec|${a.id}|approved">Approve</button><button class="no" data-a="dec|${a.id}|rejected">Reject</button></div></div>`}).join(""):`<div class="card mu">Nothing waiting for you.</div>`)+`<div class="err">${esc(msg)}</div>`}
+function appr(){const L=D.apprs.filter(a=>a.business==biz);return BIZ()+`<h2 style="margin-top:0">Approve</h2><div class="warn">Approving records your decision. Nothing is published, bought or changed automatically. Each approval is for one exact action, works once, and expires after 7 days.</div>`+(L.length?L.map(a=>{const t=D.tasks.find(x=>x.id==a.task_id)||{};const del=a.kind=="deletion",missing=!t.id,ph="DELETE "+String(a.id||"").slice(0,8);return`<div class="card"><b>${esc(t.title||"Task")}</b><div style="margin-top:4px">${chip(a.kind,"w")}${chip(a.action)}${String(a.action||"").startsWith("approve_")?chip("DESIGN/MANUSCRIPT REVIEW only","g"):chip("consequential","r")}</div><small>Expires ${new Date(a.expires_at).toLocaleDateString()}${a.est_cost>0?" · est. $"+a.est_cost:""}</small>${t.payload?`<div style="font-size:13px;margin-top:4px">${esc(JSON.stringify(t.payload))}</div>`:""}${del?`<label>Type <b>${esc(ph)}</b> to confirm<input id="cf_${esc(a.id)}"></label>`:""}${missing?`<p class="warn">Task details unavailable — approval is blocked. Refresh or contact the owner.</p>`:""}<div class="row">${missing?"":`<button class="ok" data-a="dec|${esc(a.id)}|approved">Approve</button>`}<button class="no" data-a="dec|${a.id}|rejected">Reject</button></div></div>`}).join(""):`<div class="card mu">Nothing waiting for you.</div>`)+`<div class="err">${esc(msg)}</div>`}
 function bk(){const lb=LS.get("hq_lastbk"),old=!lb||(Date.now()-+lb)>30*864e5;return`<h2 style="margin-top:0">Backup</h2><div class="card"><b>Download a full backup</b><p class="mu" style="font-size:13px">Saves every task, output, history event and approval you can access as a JSON file. Save it to Files or iCloud Drive.</p><div class="row"><button class="pri" data-a="export|">Download backup</button></div><div class="${old?"err":"mu"}" style="margin-top:8px;font-size:13px">${lb?"Last backup from this device: "+new Date(+lb).toLocaleDateString():"No backup downloaded from this device yet."}${old?" Back up now, then monthly.":""}</div><div class="err">${esc(msg)}</div></div><div class="card"><small>Free Supabase projects have no daily backups. Restoring from this file is not built yet.</small></div>`}
 function tst(){return`<h2 style="margin-top:0">Live security checks</h2><div class="warn">Read-only connection checks. No test records are created or changed. These checks do not verify approval enforcement or replace the SQL self-test.</div><div class="row" style="margin:0 0 8px"><button class="pri" data-a="runtests|">${busy?"Running…":"Run checks"}</button></div>`+(tests?tests.map(t=>`<div class="card"><b>${esc(t[0])}</b> ${chip(t[1],t[1]=="PASS"?"g":t[1]=="FAIL"?"r":"w")}<br><small>${esc(t[2])}</small></div>`).join(""):"")}
 function acct(){return`<h2 style="margin-top:0">Account</h2><div class="card"><b>iPhone unlock</b><p class="mu">${hasDeviceUnlock()?"Device unlock is enrolled for this browser.":"Set up an iPhone passkey to unlock the dashboard with Face ID where available. Requires HTTPS."}</p><div class="row"><button data-a="enroll|">${hasDeviceUnlock()?"Replace device passkey":"Set up iPhone unlock"}</button>${hasDeviceUnlock()?`<button data-a="lock|">Lock now</button><button data-a="removeunlock|">Remove device unlock</button>`:""}</div><small>Convenience lock only. Supabase verifies your login and approvals.</small></div><div class="card">Signed in as <b>${esc(S.em)}</b><div class="row"><button class="no" data-a="logout|">Sign out</button><button data-a="reset|">Change project</button></div></div><div class="card"><small>Sync: this page re-reads the database every 30 seconds while open (polling, not live push). To add to the Home Screen: Share, then Add to Home Screen.</small></div>`}
@@ -454,7 +471,9 @@ function captureCampaign(){if(campaign.length)campaign.forEach((d,i)=>{const el=
 function demoMarketing(){return demoBanner()+demoSwitch()+marketing(true)}
 function demoApprovals(){return demoBanner()+`<div class="hero"><div class="eyebrow">OWNER CONTROL</div><h2>Nothing happens without you.</h2><p>Preview each action before it reaches your customers.</p><div class="gold-beam"></div></div><div class="card"><b>Approval inbox</b><p class="mutedline">No live approvals shown in demo mode. Real approval requests require a verified Supabase connection.</p></div><div class="card"><b>Always requires authorization</b><p class="mutedline">Publishing products, posting to public accounts, paid ads, purchases, deleting records, and changing financial settings.</p></div>`}
 function demoTeam(){return demoBanner()+`<div class="hero"><div class="eyebrow">AI DEPARTMENTS</div><h2>Meet your team</h2><p>Departments are planned, not connected to AI providers.</p></div>`+[["✦","Marketing Studio","Campaigns, captions, and content calendars"],["◈","Design Studio","Merchandise and coloring book concepts"],["▣","Store Operations","Listings and product preparation"],["▥","Business Analyst","Sales, profit, and performance reporting"]].map(([icon,name,desc])=>`<div class="card"><span class="symbol">${icon}</span> <b>${name}</b><p class="mutedline">${desc}</p>${chip("Not connected","w")}</div>`).join("")}
-const fmtMoney=n=>Number.isFinite(n)?new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:0}).format(n):"—";
+const fmtMoney=n=>Number.isFinite(n)?new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(n):"—";
+const safeAmount=n=>n==null||n===""||!Number.isFinite(Number(n))?null:Number(n);
+const safeCount=n=>{const x=safeAmount(n);return Number.isSafeInteger(x)&&x>=0?x:null};
 function forecastInputs(){let v={};try{v=JSON.parse(LS.get("hq_forecast_"+biz)||"{}")||{}}catch(e){}return v}
 function forecastPanel(){const v=forecastInputs(),field=(id,label,val,step="1")=>`<label for="f_${id}">${label}<input id="f_${id}" type="number" min="0" step="${step}" inputmode="decimal" value="${esc(v[id]??val)}"></label>`;return `<div class="card"><h2>Growth Forecast</h2><p class="mutedline">Enter your actual last 30 days of results and test a growth assumption. These figures are manual, not connected to your store.</p><div class="forecast-fields">${field("sales","Orders in last 30 days","")}${field("revenue","Revenue in last 30 days ($)","","0.01")}${field("costs","Total costs in last 30 days ($)","","0.01")}${field("growth","Expected monthly growth (%)",10,"0.1")}</div><div class="actionrow"><button class="pri" data-a="forecast|">Calculate forecast</button><button data-a="forecastclear|">Clear inputs</button></div><p class="forecast-note">Total costs should include product costs, fees, marketing, subscriptions and other business expenses. Revenue minus costs is an estimate only when all costs are included. Forecasts are scenarios, not promises.</p><div id="forecast-output" aria-live="polite">${forecastOutput(v)}</div></div>`}
 function forecastOutput(v){const keys=["sales","revenue","costs","growth"];if(keys.some(k=>v[k]===undefined||v[k]===""||!Number.isFinite(Number(v[k]))))return `<div class="forecast-result"><b>No forecast yet</b><p class="mutedline">Enter your real results above, then calculate. No fictional sales are used.</p></div>`;const sales=+v.sales,revenue=+v.revenue,costs=+v.costs,g=+v.growth/100;if([sales,revenue,costs].some(n=>n<0)||+v.growth<0||+v.growth>100||revenue>0&&sales===0)return `<p class="forecast-note">Check your inputs: use nonnegative numbers, a growth rate from 0% to 100%, and an order count when revenue is positive.</p>`;const months=[1,3,12],projected=months.map(n=>revenue*Math.pow(1+g,n)),max=Math.max(revenue,...projected,1),bar=(n,label)=>`<div><div class="bar" style="height:${Math.max(2,Math.round(n/max*88))}px"></div><small>${label}</small></div>`;const margin=revenue>0?(revenue-costs)/revenue:null;const health=[];if(revenue===0)health.push(["Sales traction","No sales entered for this period; trend cannot be assessed."]);else health.push(["Sales traction",`${sales} order(s) and ${fmtMoney(revenue)} revenue entered for the past 30 days.`]);health.push(["Profitability",margin===null?"No revenue to calculate a margin.":`Estimated margin ${(margin*100).toFixed(1)}% based on costs entered. ${margin<0?"Costs exceed revenue.":"Confirm all costs are included."}`]);health.push(["Data confidence","Manual figures only; no store, ad, or cost integration verified."]);health.push(["Forecast risk","Growth is an assumption, not a prediction; future results can differ significantly."]);return `<div class="forecast-result"><b>Scenario: ${(+v.growth).toFixed(1)}% monthly revenue growth</b><div class="forecast-bars">${bar(revenue,"Today")}${bar(projected[0],"30 days")}${bar(projected[1],"90 days")}${bar(projected[2],"12 months")}</div><div class="statgrid">${stat("Current monthly revenue",fmtMoney(revenue),"Entered, not verified")}${stat("Current est. profit",fmtMoney(revenue-costs),"Before missing costs/tax")}${stat("Revenue in 90 days",fmtMoney(projected[1]),"Scenario, not actual")}${stat("Revenue in 12 months",fmtMoney(projected[2]),"Monthly run rate, not yearly total")}</div><h3>Business health snapshot</h3><div class="health-list">${health.map(([a,b])=>`<div class="health-row"><b>${a}</b><span>${b}</span></div>`).join("")}</div><p class="forecast-note">The 12-month figure is projected revenue in month 12, not cumulative annual revenue. Cost assumptions are not automatically grown or projected.</p></div>`}
@@ -483,9 +502,9 @@ function reports(){
  const L=D.tasks.filter(t=>t.business==biz),completed=L.filter(t=>t.status==="done").length;
  const live=(biz==="wb"&&fourthwallReport.ok&&fourthwallReport.row);
  const r=live?fourthwallReport.row:null;
- const count=r&&Number.isSafeInteger(Number(r.confirmed_real_orders))&&Number(r.confirmed_real_orders)>=0?Number(r.confirmed_real_orders):null;
- const total=r&&Number.isFinite(Number(r.gross_revenue))&&Number(r.gross_revenue)>=0?Number(r.gross_revenue):null;
- const tests=r&&Number.isSafeInteger(Number(r.excluded_test_orders))?Number(r.excluded_test_orders):null;
+ const count=r?safeCount(r.confirmed_real_orders):null;
+ const total=r?safeAmount(r.gross_revenue):null;
+ const tests=r?safeCount(r.excluded_test_orders):null;
  const notice=biz!=="wb"?"Fourthwall is connected only for Working Bones Outfitters. Funny Bones Kids has no store reporting connection yet.":!fourthwallReport.loaded?"Checking signed-in access to Fourthwall sales reporting…":!live?"Fourthwall report unavailable: "+fourthwallReport.error:"Authenticated Fourthwall summary received. Raw customer orders are never loaded into this page. Test notifications are excluded.";
  return BIZ()+`<div class="hero"><div class="eyebrow">BUSINESS PERFORMANCE</div><h2>Reports</h2><p>Fourthwall order activity and separate financial planning.</p><div class="gold-beam"></div></div><div class="statgrid">${stat("Tracked tasks",L.length,"From Supabase")}${stat("Completed",completed,"Recorded tasks")}${stat("Confirmed real orders",count===null?"—":count,"Fourthwall · excludes tests")}${stat("Reported order totals",total===null?"—":fmtMoney(total),"USD · provisional · not profit")}${stat("Test orders excluded",tests===null?"—":tests,"Fourthwall · not revenue")}${stat("Verified profit","—","Production costs and fees pending")}</div><div class="card"><b>Fourthwall report connection</b><p class="mutedline">${esc(notice)}</p><p class="mutedline">Reported order totals are provisional: currency units, refunds, cancellations, tax/shipping and production costs still require reconciliation against Fourthwall payouts. These are not spendable funds or verified profit.</p><div class="row"><button data-a="refreshreports|">Refresh sales</button></div></div><div class="card"><b>Fourthwall Open API — connected order-status check</b><p class="mutedline">Automatically checks when opening Reports (then at most once every five minutes while viewing) and refreshes manually on request. Order counts are read-only, not verified profit or refunds. No customer records are saved here.</p><div class="row"><button class="pri" data-a="testfourthwall|" ${fourthwallApiTest.state==="running"?"disabled":""}>${fourthwallApiTest.state==="running"?"Checking…":"Refresh Fourthwall API"}</button></div><p class="mutedline" role="status">${esc(fourthwallApiTest.message)}</p>${fourthwallApiTest.state==="ok"?`<div class="statgrid">${stat("API orders in checked pages",fourthwallApiTest.count,"Separate from verified webhook totals")}${stat("Order statuses",fourthwallApiTest.statuses,"Counts in checked pages")}</div>`:""}</div>`+performanceMeter()+forecastPanel()+budgetPanel()}
 function demoReports(){return demoBanner()+demoSwitch()+`<div class="hero"><div class="eyebrow">BUSINESS PERFORMANCE</div><h2>Reports</h2><p>Real numbers will appear when connected and verified.</p><div class="gold-beam"></div></div><div class="statgrid">${stat("Sales","—","Not connected")}${stat("Profit","—","Not connected")}</div><div class="card"><b>Data connections needed</b><p class="mutedline">Fourthwall orders, verified product costs, Metricool performance, and advertising expenses. Demo mode does not display fictional earnings.</p></div>`+performanceMeter()+forecastPanel()+budgetPanel()}
@@ -532,26 +551,46 @@ CONSTRAINTS: Draft and analyze only. Do not publish, buy, spend, access private 
 This is a manual copy; Business HQ has not contacted an AI service.`;
 }
 async function aiCloudAction(action,id){
- if(!S||!unlocked||!owner()){aiDeskMessage="Working Bones or Funny Bones owner sign-in required.";render();return}
+ if(!S||!unlocked||!owner()){aiDeskMessage="Owner sign-in required.";render();return}
+ aiDraftFromInputs();
  if(action==="aicloudrefresh"){await loadAiCloud();render();return}
  if(action==="aicloudsave"){
-  aiDraftFromInputs();if(!aiGoalDraft.trim()){aiDeskMessage="Enter a task before saving to the cloud.";render();return}
-  const worker=AI_ROLE_INFO[aiSelected]?aiSelected:"chatgpt";
-  const r=await call("/rest/v1/hq_ai_handoffs",{method:"POST",headers:{Prefer:"return=minimal"},body:{business:biz,worker,goal:aiGoalDraft.trim(),result:aiResultDraft.trim(),status:aiResultDraft.trim()?"ready_for_review":"draft"}});
-  aiDeskMessage=r.ok?"Saved to owner-only Supabase storage. This did not contact any AI or approve an action.":"Cloud save failed: "+err(r);
-  if(r.ok)await loadAiCloud();render();return;
+  if(aiCloud.busy)return;
+  const goal=aiGoalDraft.trim();if(!goal){aiDeskMessage="Enter a task before saving to the cloud.";render();return}
+  aiCloud.busy=true;
+  try{
+   const worker=AI_ROLE_INFO[aiSelected]?aiSelected:"chatgpt";
+   const body={business:biz,worker,goal,result:aiResultDraft.trim(),status:aiResultDraft.trim()?"ready_for_review":"draft"};
+   let r;
+   if(aiEditId){
+    r=await call("/rest/v1/hq_ai_handoffs?id=eq."+encodeURIComponent(aiEditId)+"&business=eq."+encodeURIComponent(biz),{method:"PATCH",headers:{Prefer:"return=representation"},body});
+    aiDeskMessage=!r.ok?"Cloud update failed: "+err(r):cloudRows(r).length===1?"Cloud handoff updated, not sent to an AI.":"Nothing updated. This record may have been deleted or access changed.";
+   }else{
+    const same=aiCloud.items.some(v=>v.business===biz&&v.worker===worker&&v.goal===goal&&String(v.result||"")===body.result);
+    if(same){aiDeskMessage="An identical handoff is already in the cloud.";render();return}
+    r=await call("/rest/v1/hq_ai_handoffs",{method:"POST",headers:{Prefer:"return=representation"},body});
+    aiDeskMessage=!r.ok?"Cloud save failed: "+err(r):cloudRows(r).length===1?"Saved to owner-only cloud storage. No AI contacted or action approved.":"Save was not confirmed; refresh before retrying.";
+   }
+   if(r?.ok){await loadAiCloud();if(cloudRows(r).length===1)aiEditId=cloudRows(r)[0].id}
+  }catch(e){aiDeskMessage="Cloud save failed: "+String(e.message||e)}
+  finally{aiCloud.busy=false;render()}
+  return;
  }
  const item=aiCloud.items.find(v=>v.id===id&&v.business===biz);
  if(!item){aiDeskMessage="Cloud handoff not found. Refresh the list.";render();return}
  if(action==="aicloudload"){
+  aiEditId=item.id;
   aiSelected=AI_ROLE_INFO[item.worker]?item.worker:"chatgpt";aiGoalDraft=item.goal;aiResultDraft=item.result||"";
-  aiDeskMessage="Cloud handoff loaded. Changes can be saved as a new cloud draft.";render();return;
+  aiDeskMessage="Cloud handoff loaded for editing. Save will update this record.";render();return;
  }
  if(action==="aiclouddelete"){
   if(!confirm("Delete this saved cloud handoff? This cannot be undone."))return;
-  const r=await call("/rest/v1/hq_ai_handoffs?id=eq."+encodeURIComponent(id)+"&business=eq."+encodeURIComponent(biz),{method:"DELETE"});
-  aiDeskMessage=r.ok?"Cloud copy deleted. Local drafts are unchanged.":"Cloud delete failed: "+err(r);
-  if(r.ok)await loadAiCloud();render();return;
+  try{
+   const r=await call("/rest/v1/hq_ai_handoffs?id=eq."+encodeURIComponent(id)+"&business=eq."+encodeURIComponent(biz),{method:"DELETE",headers:{Prefer:"return=representation"}});
+   aiDeskMessage=!r.ok?"Cloud delete failed: "+err(r):cloudRows(r).length===1?"Cloud copy deleted. Local drafts are unchanged.":"Nothing deleted (not found or not permitted).";
+   if(r.ok){if(aiEditId===id&&cloudRows(r).length===1)aiEditId=null;await loadAiCloud()}
+  }catch(e){aiDeskMessage="Cloud delete failed: "+String(e.message||e)}
+  render();return;
  }
 }
 async function onclick(e){const t=e.target.closest("[data-a]");if(!t||t.tagName=="SELECT")return;const[a,x,y]=t.dataset.a.split("|");msg="";
@@ -608,6 +647,7 @@ if(a==="aiimport"){
   const seen=new Set(existing.map(item=>JSON.stringify([item.code,item.goal,item.result])));
   let added=0;
   for(const item of restored){const key=JSON.stringify([item.code,item.goal,item.result]);if(!seen.has(key)){existing.push(item);seen.add(key);added++}}
+  if(existing.length>25)throw Error("Not enough space for all restored handoffs. Export an existing backup and remove older items before restoring.");
   if(!aiDeskWrite(existing))throw Error("Your browser could not save the restored handoffs.");
   aiDeskMessage=`Restored ${Math.min(added,25)} new handoff(s) to this browser, up to the 25-item limit. No approval or external action occurred.`;
  }catch(e){aiDeskMessage="Restore unsuccessful: "+(e.message||"invalid JSON")+" Saved handoffs were not intentionally changed."}
@@ -615,10 +655,10 @@ if(a==="aiimport"){
 }
 if(a==="aisave"){
  aiDraftFromInputs();if(!aiGoalDraft.trim()){aiDeskMessage="Enter an assignment before saving.";render();return;}
- const items=aiDeskRead();items.unshift({worker:AI_ROLE_INFO[aiSelected]?.name||"AI",code:aiSelected,goal:aiGoalDraft.trim(),result:aiResultDraft.trim(),date:new Date().toLocaleDateString()});aiDeskMessage=aiDeskWrite(items)?"Saved only in this browser, not synced to Supabase. No approval or external action occurred.":"Could not save on this device. Copy your brief or notes to another safe location.";render();return;
+ const items=aiDeskRead();if(items.length>=25){aiDeskMessage="Limit of 25 local handoffs reached. Export and remove an old one first.";render();return}if(items.some(v=>v.code===aiSelected&&v.goal===aiGoalDraft.trim()&&v.result===aiResultDraft.trim())){aiDeskMessage="Identical handoff already saved locally.";render();return}items.unshift({worker:AI_ROLE_INFO[aiSelected]?.name||"AI",code:aiSelected,goal:aiGoalDraft.trim(),result:aiResultDraft.trim(),date:new Date().toLocaleDateString()});aiDeskMessage=aiDeskWrite(items)?"Saved only in this browser, not synced to Supabase. No approval or external action occurred.":"Could not save on this device. Copy your brief or notes to another safe location.";render();return;
 }
 if(a==="aiclear"){
- aiGoalDraft="";aiResultDraft="";aiSelectedPreset="general";aiDeskMessage="Draft cleared. Saved handoffs are unchanged.";render();return;
+ aiEditId=null;aiGoalDraft="";aiResultDraft="";aiSelectedPreset="general";aiDeskMessage="Draft cleared. Saved handoffs are unchanged.";render();return;
 }
 if(["aiload","aicopyold","aidelete"].includes(a)){
  const i=Number(x),items=aiDeskRead(),item=items[i];if(!Number.isSafeInteger(i)||i<0||!item){aiDeskMessage="Saved handoff unavailable.";render();return}
@@ -665,10 +705,10 @@ if(a=="savebudget"){const b={};for(const k of ["ads","tools","operations","other
  }
  else if(a=="savedraft"){draftText=$("#m_output")?.value||"";LS.set("hq_marketing_draft_"+biz,draftText);draftMessage="Saved in this browser only."}
  else if(a=="loaddraft"){draftText=LS.get("hq_marketing_draft_"+biz)||"";draftMessage=draftText?"Saved draft loaded.":"No saved draft for this business."}
- else if(a=="tab"){tab=x;if(x==="team"&&!demo&&S&&unlocked){await loadAiCloud()} if(x==="reports"&&!demo&&S&&unlocked&&biz==="wb")await checkFourthwallApi()}else if(a=="biz"){biz=x;aiCloud={loaded:false,error:"",items:[],busy:false};if(tab==="team"&&!demo&&S&&unlocked){await loadAiCloud()} if(tab==="reports"&&x==="wb"&&!demo&&S&&unlocked)await checkFourthwallApi()}else if(a=="form"){form=!form}
+ else if(a=="tab"){tab=x;if(x==="team"&&!demo&&S&&unlocked){await loadAiCloud()} if(x==="reports"&&!demo&&S&&unlocked&&biz==="wb")await checkFourthwallApi()}else if(a=="biz"){biz=x;aiEditId=null;aiCloud={loaded:false,error:"",items:[],busy:false};if(tab==="team"&&!demo&&S&&unlocked){await loadAiCloud()} if(tab==="reports"&&x==="wb"&&!demo&&S&&unlocked)await checkFourthwallApi()}else if(a=="form"){form=!form}
 else if(a=="cfg"){const u=$("#u").value.trim().replace(/\/$/,""),k=$("#k").value.trim();if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(u)){msg="Project URL should look like https://abcd.supabase.co";return render(msg)}const b=badKey(k);if(b){msg=b;K="";return render()}U=u;K=k;LS.set("hq_url",U);LS.set("hq_key",K)}
 else if(a=="login"){const em=$("#em").value.trim(),pw=$("#pw").value;const r=await call("/auth/v1/token?grant_type=password",{method:"POST",body:{email:em,password:pw},anon:true});if(!r.ok){msg="Sign-in failed: "+err(r)}else{S={at:r.j.access_token,rt:r.j.refresh_token,em};LS.set("hq_sess",JSON.stringify(S));unlocked=true;await load()}}
-else if(a=="logout"||a=="signout"){unlocked=false;S=null;LS.del("hq_sess");D={tasks:[],apprs:[],rules:[],req:[],mem:[]};fourthwallReport={loaded:false,ok:false,row:null,error:""};fourthwallApiTest={state:"idle",message:"Not checked yet.",count:null,statuses:null};fourthwallLastCheck=0}
+else if(a=="logout"||a=="signout"){aiEditId=null;unlocked=false;S=null;LS.del("hq_sess");D={tasks:[],apprs:[],rules:[],req:[],mem:[]};fourthwallReport={loaded:false,ok:false,row:null,error:""};fourthwallApiTest={state:"idle",message:"Not checked yet.",count:null,statuses:null};fourthwallLastCheck=0}
 else if(a=="reset"){unlocked=false;S=null;LS.del("hq_sess");LS.del("hq_url");LS.del("hq_key");U="";K="";fourthwallReport={loaded:false,ok:false,row:null,error:""};fourthwallApiTest={state:"idle",message:"Not checked yet.",count:null,statuses:null};fourthwallLastCheck=0}
 else if(a=="enroll"){await enrollDevice()}
  else if(a=="unlock"){await unlockDevice();return}
