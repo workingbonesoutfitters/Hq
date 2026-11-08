@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://*.supabase.co; img-src data:; base-uri 'none'; form-action 'none'">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Business HQ">
-<title>Business HQ · Gold Edition · Boardroom v3.4</title>
+<title>Business HQ · Gold Edition · Boardroom v3.5</title>
 <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=3">
 <style>
 :root{--bg:#f5f3ee;--card:#fff;--tx:#1d1d1b;--mu:#6b6a64;--ln:#e2dfd6;--ac:#c2410c;--ok:#15803d;--wa:#b45309;--bad:#b91c1c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -176,7 +176,7 @@ body{min-height:100vh;min-height:100dvh}
 /* Business HQ Boardroom integrated view — inherits Gold Edition styles */
 .br-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:0 0 16px}.br-summary>div{text-align:center;border:1px solid var(--ln);border-radius:17px;padding:13px 5px;background:linear-gradient(145deg,#fff1,transparent)}.br-summary b{display:block;font-size:25px;color:#f3d18c}.br-summary small{font-size:10px;color:var(--mu)}.br-section-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}.br-section-head h2{margin:0}.br-recommend{display:flex;gap:11px;align-items:start;padding:12px 0;border-top:1px solid #ffffff16}.br-recommend b{display:block;font-size:14px}.br-recommend small{display:block;margin-top:4px;color:var(--mu)}.br-spark{color:#f0c778}.br-participants{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0}.br-participants span{border:1px solid #a8864f66;background:#e9c47811;border-radius:99px;color:#f0d49e;padding:5px 9px;font-size:11px}.br-empty{padding:26px 14px;text-align:center;background:#08090e88;border:1px dashed #80673d88;color:#c2b7a2;border-radius:16px;font-size:13px;line-height:1.6}.br-message{background:#0003;border-radius:14px;margin:9px 0;padding:12px;border:1px solid #e9c47822}.br-message b{color:#f0cb80}.br-message p{margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px}.br-message small{color:var(--mu)}.br-controls{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}.br-controls button{min-width:0;font-size:13px}#br_msg{font-size:16px;min-height:100px}.card>summary{cursor:pointer;color:#f2d28f;font-weight:600}.card>summary+*{margin-top:12px}@media(max-width:380px){.br-section-head{align-items:start}.br-summary small{font-size:9px}}
 </style></head><body>
-<header><h1>Business HQ <small>GOLD EDITION · V3.4</small></h1></header>
+<header><h1>Business HQ <small>GOLD EDITION · V3.5</small></h1></header>
 <main id="app"><div class="hero"><div class="eyebrow">BUSINESS HQ · GOLD EDITION</div><h2>One headquarters. Two businesses.</h2><p>A simple home for your AI Manager, Marketing, AI Team, and Approvals.</p><div class="gold-beam"></div></div><h2>Your four departments</h2><div class="quickgrid"><div class="quick"><div class="symbol">✧</div><strong>AI Manager</strong><span>Give one instruction and review the plan</span></div><div class="quick"><div class="symbol">✦</div><strong>Marketing</strong><span>Prepare campaigns and drafts</span></div><div class="quick"><div class="symbol">◇</div><strong>AI Team</strong><span>See who handles each job</span></div><div class="quick"><div class="symbol">✓</div><strong>Approvals</strong><span>Review important decisions</span></div></div><section aria-label="Empire Overview preview"><div class="empire-head"><div><div class="eyebrow">THE EMPIRE OVERVIEW</div><h2>Both businesses. One screen.</h2></div></div><div class="empire-grid"><article class="empire-card"><div class="empire-tag">01 · Apparel</div><div class="empire-name">Working Bones Outfitters</div><div class="empire-gauge" style="--score:0"><div class="empire-gauge-inner"><b>—</b><small>NO DATA</small></div></div><div class="empire-data"><div><b>—</b><small>Revenue</small></div><div><b>—</b><small>Profit</small></div></div><p class="empire-note">Awaiting verified sales data</p></article><article class="empire-card"><div class="empire-tag">02 · Publishing</div><div class="empire-name">Funny Bones Kids</div><div class="empire-gauge" style="--score:0"><div class="empire-gauge-inner"><b>—</b><small>NO DATA</small></div></div><div class="empire-data"><div><b>—</b><small>Revenue</small></div><div><b>—</b><small>Profit</small></div></div><p class="empire-note">Awaiting verified sales data</p></article></div></section><div class="card" style="margin-top:18px"><b>Preview only</b><p class="mutedline">This file preview shows the design; open the hosted website to use the working app. If the buttons don't respond, the preview is blocking JavaScript. A securely hosted HTTPS version is required to test the interactive app in Safari. No ads, purchases, or publishing are enabled.</p></div></main><nav id="nav"></nav>
 <script>
 "use strict";
@@ -386,6 +386,69 @@ async function loadBoardroomCloud(){
  if(tab==="boardroom")render();
 }
 function demoBoardroom(){return `<div class="hero"><div class="eyebrow">DEMO · NO LIVE AI</div><h2>Executive Boardroom</h2><p>Sign in to see your business records.</p><div class="gold-beam"></div></div><div class="card"><h2>Team conversation</h2><p class="mutedline">No live provider connections are enabled.</p></div>`;}
+// Boardroom Voice v3.5: device-native speech only. No microphone stream is retained.
+let hqTalking=false, hqRecognizer=null;
+function hqVoiceState(message){const n=document.getElementById("br_voice_status");if(n)n.textContent=message;}
+function hqStopVoice(){
+ try{window.speechSynthesis?.cancel()}catch(_){}
+ if(hqRecognizer){try{hqRecognizer.abort()}catch(_){}hqRecognizer=null;}
+ hqTalking=false;hqVoiceState("Voice stopped.");
+}
+function hqSayLines(lines){
+ if(!("speechSynthesis" in window)){hqVoiceState("Spoken replies are unavailable on this device. You can still read the briefing.");return;}
+ hqStopVoice();
+ const synth=window.speechSynthesis;
+ const voices=synth.getVoices().filter(v=>/^en([-_]|$)/i.test(v.lang));
+ // Distinct installed voices when possible; never claim the vendor's native voice.
+ const speakers=["chatgpt","claude","grok"];
+ const picks={};speakers.forEach((k,i)=>{picks[k]=voices[i%Math.max(1,voices.length)]||null;});
+ const queue=lines.filter(x=>x&&x.text&&String(x.text).trim()).slice(0,12);
+ if(!queue.length){hqVoiceState("Nothing to read yet.");return;}
+ hqTalking=true;hqVoiceState("Speaking through your selected audio output…");
+ queue.forEach((line,i)=>{
+   const utterance=new SpeechSynthesisUtterance(String(line.text).slice(0,3500));
+   utterance.lang="en-US";utterance.rate=.94;utterance.pitch=line.speaker==="grok"?1.13:line.speaker==="claude"?.92:1;
+   if(picks[line.speaker])utterance.voice=picks[line.speaker];
+   utterance.onerror=()=>{hqTalking=false;hqVoiceState("Speech playback was interrupted. Tap Speak to try again.");};
+   if(i===queue.length-1)utterance.onend=()=>{hqTalking=false;hqVoiceState("Briefing finished.");};
+   synth.speak(utterance);
+ });
+}
+function hqBriefingText(){
+ const approvals=D.apprs.filter(x=>x.business===biz);
+ const jobs=D.tasks.filter(x=>x.business===biz);
+ const active=jobs.filter(x=>["queued","claimed","running","approved"].includes(x.status));
+ const name=BN[biz]||"your business";
+ let text="HQ briefing for "+name+". ";
+ text+=approvals.length?"You have "+approvals.length+" pending approval"+(approvals.length===1?"":"s")+". Open your approval inbox to review each action. ":"There are no pending approvals in the currently loaded records. ";
+ text+=active.length?"There are "+active.length+" active tasks. ":"No active tasks are shown in the currently loaded records. ";
+ if(active.length)text+="Top task: "+String(active[0].title||"Untitled task").slice(0,120)+". ";
+ if(biz==="wb"){
+   const report=fourthwallReport.ok?fourthwallReport.row:null;
+   if(report){
+     const orders=safeCount(report.confirmed_real_orders), rev=safeAmount(report.gross_revenue);
+     text+="Latest available Fourthwall reporting shows "+(orders===null?"an unverified order count":orders+" confirmed real orders")+" and "+(rev===null?"unavailable revenue":fmtMoney(rev)+" reported gross revenue")+". These are not profit figures and may not reflect today's sales. ";
+   }else text+="Verified store sales figures are not available in this briefing. ";
+ }
+ text+="The three paid AI providers are still disabled; these updates come from saved business records, not a live three-AI meeting.";
+ return text;
+}
+function hqReadTeam(){
+ const active=boardroomCloud.threads.find(x=>x.business===biz);
+ const ms=active?boardroomCloud.messages.filter(x=>x.thread_id===active.id&&["chatgpt","claude","grok"].includes(x.speaker)):[];
+ if(!ms.length){hqVoiceState("No genuine AI replies have been saved yet. The paid providers remain disabled.");return;}
+ hqSayLines(ms.slice(-6).map(m=>({speaker:m.speaker,text:m.speaker+" says: "+m.message})));
+}
+function hqDictate(){
+ const SpeechAPI=window.SpeechRecognition||window.webkitSpeechRecognition;
+ if(!SpeechAPI){hqVoiceState("Hands-free dictation is not supported here. Tap your iPhone keyboard microphone to dictate into the message box.");document.getElementById("br_msg")?.focus();return;}
+ hqStopVoice();
+ const r=new SpeechAPI();hqRecognizer=r;r.lang="en-US";r.interimResults=false;r.continuous=false;
+ r.onresult=e=>{const words=e.results?.[0]?.[0]?.transcript||"";const field=document.getElementById("br_msg");if(field){field.value=(field.value?field.value.trim()+" ":"")+words;boardroomText=field.value;LS.set("hq_boardroom_local_draft",boardroomText);}hqVoiceState("Transcribed locally in the message box. Review it and tap Send my message; nothing was submitted automatically.");};
+ r.onerror=e=>hqVoiceState("Microphone unavailable ("+(e.error||"unknown")+"). Try iPhone keyboard dictation.");
+ r.onend=()=>{hqRecognizer=null;};
+ try{r.start();hqVoiceState("Listening… Speak your message.");}catch(_){hqVoiceState("Microphone couldn't start. Try keyboard dictation.");}
+}
 function boardroom(){
  const a=D.apprs.filter(x=>x.business===biz),tasks=D.tasks.filter(x=>x.business===biz);
  const waiting=tasks.filter(x=>["queued","claimed","running","approved"].includes(x.status));
@@ -398,6 +461,10 @@ function boardroom(){
  const spent=boardroomCloud.budget.reduce((t,b)=>t+(Number(b.spent_cents)||0),0);
  return BIZ()+`<div class="hero"><div class="eyebrow">BUSINESS HQ · GOLD EDITION</div><h2>Executive Boardroom</h2><p>One place to hear the team's recommendations and join the discussion.</p><div class="gold-beam"></div></div>
  <div class="br-summary"><div><b>${a.length}</b><small>Need approval</small></div><div><b>${waiting.length}</b><small>In progress</small></div><div><b>${done.length}</b><small>Completed tasks</small></div></div>
+ <div class="card"><div class="br-section-head"><h2>🎙 HQ Voice Briefing</h2><span class="chip">Device speech · No AI charges</span></div>
+ <p class="mutedline">Hear your latest loaded tasks, approvals, and available store reporting. This is a spoken data summary—not yet a live three-AI conversation.</p>
+ <div class="br-controls"><button class="pri" data-a="brspeak|">▶ Hear my briefing</button><button data-a="brteamvoice|">Hear AI replies</button><button data-a="brstopvoice|">■ Stop voice</button></div>
+ <p class="mutedline" id="br_voice_status" role="status">AirPods work as your iPhone audio output. Start playback with a tap; this website cannot wake itself when closed.</p></div>
  <div class="card"><div class="br-section-head"><h2>Recommended next steps</h2><span class="chip">From saved tasks</span></div>
  ${a.length?`<p class="mutedline">${a.length} decision(s) need your review.</p><button class="pri" data-a="tab|appr">Review approvals</button>`:""}
  ${waiting.length?waiting.slice(0,3).map(t=>`<div class="br-recommend"><span class="br-spark">✦</span><div><b>${esc(t.title||"Untitled task")}</b><small>${esc(t.status||"Pending")} · ${esc(t.department||"Business operations")}</small></div></div>`).join(""):`<p class="mutedline">No active tasks for this business. New AI-generated priorities will appear once their secure connection is approved.</p>`}
@@ -407,6 +474,7 @@ function boardroom(){
  ${boardroomCloud.error?`<p class="err">${esc(boardroomCloud.error)}</p>`:""}
  ${messages.length?messages.slice(-20).map(m=>`<div class="br-message"><b>${esc(speech[m.speaker]||m.speaker)}</b><p>${esc(m.message)}</p><small>${esc(m.provider_model||"")}</small></div>`).join(""):`<div class="br-empty">No live Boardroom messages yet. The provider connections are intentionally off.</div>`}
  <label for="br_msg">Your message</label><textarea id="br_msg" rows="3" maxlength="4000" placeholder="Share an idea with your executive team...">${esc(boardroomText)}</textarea>
+ <div class="br-controls"><button data-a="brdictate|">🎙 Dictate</button></div>
  <div class="br-controls"><button class="pri" data-a="brsend|" ${boardroomSending?"disabled":""}>${boardroomSending?"Saving…":"Send my message"}</button><button data-a="brrefresh|">Refresh conversation</button></div>
  ${boardroomNotice?`<p class="mutedline" role="status">${esc(boardroomNotice)}</p>`:""}
  <p class="hint">Your message is saved to the owner-only Supabase conversation. AI providers remain disabled and will not reply yet. Saving a message makes no paid API calls.</p></div>
@@ -662,6 +730,11 @@ async function aiCloudAction(action,id){
  }
 }
 async function onclick(e){const br=e.target.closest("[data-a]")?.dataset.a||"";
+if(br==="brspeak|"){boardroomText=$("#br_msg")?.value||boardroomText;hqSayLines([{speaker:"chatgpt",text:hqBriefingText()}]);return;}
+if(br==="brteamvoice|"){boardroomText=$("#br_msg")?.value||boardroomText;hqReadTeam();return;}
+if(br==="brstopvoice|"){hqStopVoice();return;}
+if(br==="brdictate|"){hqDictate();return;}
+
 if(br==="brtest|"){
  if(boardroomRouterBusy)return;
  boardroomText=$("#br_msg")?.value||boardroomText;
@@ -882,6 +955,7 @@ async function runtests(){busy=true;tests=[];render();const T=(n,s,d)=>tests.pus
 document.addEventListener("click",onclick);
 let leftPage=false;
 document.addEventListener("visibilitychange",()=>{
+ if(document.hidden)hqStopVoice();
  if(document.hidden){leftPage=true;return}
  if(leftPage&&hasDeviceUnlock()&&S){leftPage=false;unlocked=false;D={tasks:[],apprs:[],rules:[],req:[],mem:[]};render()}
 });
