@@ -4,9 +4,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://*.supabase.co; img-src data:; base-uri 'none'; form-action 'none'">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Business HQ">
-<title>Business HQ · Gold Edition · Stability Review</title>
+<title>Business HQ · Gold Edition · Boardroom v3.1</title>
 <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=3">
-
 <style>
 :root{--bg:#f5f3ee;--card:#fff;--tx:#1d1d1b;--mu:#6b6a64;--ln:#e2dfd6;--ac:#c2410c;--ok:#15803d;--wa:#b45309;--bad:#b91c1c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141413;--card:#1f1f1d;--tx:#f1efe8;--mu:#a09e95;--ln:#33322e;--ac:#fb923c;--ok:#4ade80;--wa:#fbbf24;--bad:#f87171}}
@@ -173,8 +172,11 @@ main,.card,.statgrid,.stat,.empire-grid,.empire-card{min-width:0}
 }
 input,select,textarea{font-size:16px!important}
 body{min-height:100vh;min-height:100dvh}
+
+/* Business HQ Boardroom integrated view — inherits Gold Edition styles */
+.br-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:0 0 16px}.br-summary>div{text-align:center;border:1px solid var(--ln);border-radius:17px;padding:13px 5px;background:linear-gradient(145deg,#fff1,transparent)}.br-summary b{display:block;font-size:25px;color:#f3d18c}.br-summary small{font-size:10px;color:var(--mu)}.br-section-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}.br-section-head h2{margin:0}.br-recommend{display:flex;gap:11px;align-items:start;padding:12px 0;border-top:1px solid #ffffff16}.br-recommend b{display:block;font-size:14px}.br-recommend small{display:block;margin-top:4px;color:var(--mu)}.br-spark{color:#f0c778}.br-participants{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0}.br-participants span{border:1px solid #a8864f66;background:#e9c47811;border-radius:99px;color:#f0d49e;padding:5px 9px;font-size:11px}.br-empty{padding:26px 14px;text-align:center;background:#08090e88;border:1px dashed #80673d88;color:#c2b7a2;border-radius:16px;font-size:13px;line-height:1.6}.br-message{background:#0003;border-radius:14px;margin:9px 0;padding:12px;border:1px solid #e9c47822}.br-message b{color:#f0cb80}.br-message p{margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px}.br-message small{color:var(--mu)}.br-controls{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}.br-controls button{min-width:0;font-size:13px}#br_msg{font-size:16px;min-height:100px}.card>summary{cursor:pointer;color:#f2d28f;font-weight:600}.card>summary+*{margin-top:12px}@media(max-width:380px){.br-section-head{align-items:start}.br-summary small{font-size:9px}}
 </style></head><body>
-<header><h1>Business HQ <small>GOLD EDITION · V3.0</small></h1></header>
+<header><h1>Business HQ <small>GOLD EDITION · V3.1</small></h1></header>
 <main id="app"><div class="hero"><div class="eyebrow">BUSINESS HQ · GOLD EDITION</div><h2>One headquarters. Two businesses.</h2><p>A simple home for your AI Manager, Marketing, AI Team, and Approvals.</p><div class="gold-beam"></div></div><h2>Your four departments</h2><div class="quickgrid"><div class="quick"><div class="symbol">✧</div><strong>AI Manager</strong><span>Give one instruction and review the plan</span></div><div class="quick"><div class="symbol">✦</div><strong>Marketing</strong><span>Prepare campaigns and drafts</span></div><div class="quick"><div class="symbol">◇</div><strong>AI Team</strong><span>See who handles each job</span></div><div class="quick"><div class="symbol">✓</div><strong>Approvals</strong><span>Review important decisions</span></div></div><section aria-label="Empire Overview preview"><div class="empire-head"><div><div class="eyebrow">THE EMPIRE OVERVIEW</div><h2>Both businesses. One screen.</h2></div></div><div class="empire-grid"><article class="empire-card"><div class="empire-tag">01 · Apparel</div><div class="empire-name">Working Bones Outfitters</div><div class="empire-gauge" style="--score:0"><div class="empire-gauge-inner"><b>—</b><small>NO DATA</small></div></div><div class="empire-data"><div><b>—</b><small>Revenue</small></div><div><b>—</b><small>Profit</small></div></div><p class="empire-note">Awaiting verified sales data</p></article><article class="empire-card"><div class="empire-tag">02 · Publishing</div><div class="empire-name">Funny Bones Kids</div><div class="empire-gauge" style="--score:0"><div class="empire-gauge-inner"><b>—</b><small>NO DATA</small></div></div><div class="empire-data"><div><b>—</b><small>Revenue</small></div><div><b>—</b><small>Profit</small></div></div><p class="empire-note">Awaiting verified sales data</p></article></div></section><div class="card" style="margin-top:18px"><b>Preview only</b><p class="mutedline">This file preview shows the design; open the hosted website to use the working app. If the buttons don't respond, the preview is blocking JavaScript. A securely hosted HTTPS version is required to test the interactive app in Safari. No ads, purchases, or publishing are enabled.</p></div></main><nav id="nav"></nav>
 <script>
 "use strict";
@@ -325,7 +327,7 @@ if(canReadRevenue){
 }else{fourthwallReport={loaded:true,ok:false,row:null,error:"Working Bones owner permission required"}}
 render()}
 const owner=()=>!!D.mem.find(m=>m.business==biz&&m.role=="owner");
-function nav(){$("#nav").innerHTML=((demo||S&&unlocked)?[["home","⌂ Home"],["tasks","☷ Tasks"],["reports","▥ Reports"],["settings","⚙ Settings"]]:[]).map(([k,l])=>`<button data-a="tab|${k}" class="${(tab===k||(k==="settings"&&["bk","tst","acct"].includes(tab)))?"on":""}">${l}</button>`).join("")}
+function nav(){$("#nav").innerHTML=((demo||S&&unlocked)?[["home","⌂ Home"],["boardroom","◇ Boardroom"],["reports","▥ Reports"],["settings","⚙ Settings"]]:[]).map(([k,l])=>`<button data-a="tab|${k}" class="${(tab===k||(k==="settings"&&["bk","tst","acct"].includes(tab)))?"on":""}">${l}</button>`).join("")}
 
 
 const chip=(t,c)=>`<span class="chip ${c||""}">${esc(t)}</span>`;
@@ -349,6 +351,61 @@ function home(){
  const L=D.tasks.filter(t=>t.business==biz), A=D.apprs.filter(a=>a.business==biz);
  const done=L.filter(t=>t.status==="done").length,active=L.filter(t=>["queued","claimed","running","approved"].includes(t.status)).length;
  return BIZ()+`<div class="hero"><div class="eyebrow">THE EXECUTIVE SUITE</div><h2>${esc(BN[biz]||"Choose a business")}</h2><p>Everything important, in one place.</p></div><div class="statgrid">${stat("Tasks",L.length,"Total tracked")}${stat("Needs approval",A.length,"Waiting for you")}${stat("In progress",active,"Queued or active")}${stat("Completed",done,"Finished tasks")}</div>${ownerSnapshot()}${empireOverview()}<h2>Choose a department</h2><div class="quickgrid"><button class="quick" data-a="tab|manager"><div class="symbol">✧</div><strong>AI Manager</strong><span>Give instructions</span></button><button class="quick" data-a="tab|marketing"><div class="symbol">✦</div><strong>Marketing</strong><span>Create campaigns</span></button><button class="quick" data-a="tab|team"><div class="symbol">◇</div><strong>AI Team</strong><span>View departments</span></button><button class="quick" data-a="tab|appr"><div class="symbol">✓</div><strong>Approvals</strong><span>Review decisions</span></button></div><div class="card" style="margin-top:16px"><b><span class="statusdot"></span>Integration status</b><p class="mutedline">Fourthwall reporting is available to the signed-in owner; check Reports for its current status. Claude and Grok are manual handoffs, not connected services. No automatic AI work, publishing, spending or advertising is enabled. No background work runs when the page is closed.</p></div>`;
+}
+// Boardroom preview: only read existing RLS-protected records. No paid AI calls.
+let boardroomCloud={loaded:false,loading:false,error:"",threads:[],messages:[],budget:[]};
+let boardroomText=LS.get("hq_boardroom_local_draft")||"";
+let boardroomNotice="";
+async function loadBoardroomCloud(){
+ if(!S||!unlocked||!owner()||boardroomCloud.loading)return;
+ boardroomCloud.loading=true;
+ try{
+  const [t,b]=await Promise.all([
+    call("/rest/v1/hq_boardroom_threads?select=id,title,business,created_at&business=eq."+encodeURIComponent(biz)+"&order=created_at.desc&limit=15"),
+    call("/rest/v1/hq_boardroom_budget?select=provider,allocation_cents,spent_cents,reserved_cents,enabled&order=provider.asc")
+  ]);
+  if(!t.ok)throw Error("Conversation read unavailable (HTTP "+t.status+")");
+  const threads=Array.isArray(t.j)?t.j:[];
+  let messages=[];
+  if(threads.length){
+    const ids=threads.map(x=>x.id).filter(x=>/^[a-f0-9-]{36}$/i.test(x));
+    if(ids.length){
+      const m=await call("/rest/v1/hq_boardroom_messages?select=id,thread_id,speaker,message,provider_model,created_at&thread_id=in.("+ids.join(",")+")&order=created_at.asc&limit=100");
+      if(!m.ok)throw Error("Message read unavailable (HTTP "+m.status+")");
+      messages=Array.isArray(m.j)?m.j:[];
+    }
+  }
+  boardroomCloud={loaded:true,loading:false,error:b.ok?"":"Budget read unavailable",threads,messages,budget:b.ok&&Array.isArray(b.j)?b.j:[]};
+ }catch(e){boardroomCloud={...boardroomCloud,loaded:true,loading:false,error:String(e.message||e)}}
+ if(tab==="boardroom")render();
+}
+function demoBoardroom(){return `<div class="hero"><div class="eyebrow">DEMO · NO LIVE AI</div><h2>Executive Boardroom</h2><p>Sign in to see your business records.</p><div class="gold-beam"></div></div><div class="card"><h2>Team conversation</h2><p class="mutedline">No live provider connections are enabled.</p></div>`;}
+function boardroom(){
+ const a=D.apprs.filter(x=>x.business===biz),tasks=D.tasks.filter(x=>x.business===biz);
+ const waiting=tasks.filter(x=>["queued","claimed","running","approved"].includes(x.status));
+ const done=tasks.filter(x=>x.status==="done");
+ const threads=boardroomCloud.threads.filter(x=>x.business===biz);
+ const active=threads[0];
+ const messages=active?boardroomCloud.messages.filter(x=>x.thread_id===active.id):[];
+ const speech={owner:"You",chatgpt:"ChatGPT",claude:"Claude",grok:"Grok",system:"System"};
+ const allowance=boardroomCloud.budget.reduce((t,b)=>t+(Number(b.allocation_cents)||0),0);
+ const spent=boardroomCloud.budget.reduce((t,b)=>t+(Number(b.spent_cents)||0),0);
+ return BIZ()+`<div class="hero"><div class="eyebrow">BUSINESS HQ · GOLD EDITION</div><h2>Executive Boardroom</h2><p>One place to hear the team's recommendations and join the discussion.</p><div class="gold-beam"></div></div>
+ <div class="br-summary"><div><b>${a.length}</b><small>Need approval</small></div><div><b>${waiting.length}</b><small>In progress</small></div><div><b>${done.length}</b><small>Completed tasks</small></div></div>
+ <div class="card"><div class="br-section-head"><h2>Recommended next steps</h2><span class="chip">From saved tasks</span></div>
+ ${a.length?`<p class="mutedline">${a.length} decision(s) need your review.</p><button class="pri" data-a="tab|appr">Review approvals</button>`:""}
+ ${waiting.length?waiting.slice(0,3).map(t=>`<div class="br-recommend"><span class="br-spark">✦</span><div><b>${esc(t.title||"Untitled task")}</b><small>${esc(t.status||"Pending")} · ${esc(t.department||"Business operations")}</small></div></div>`).join(""):`<p class="mutedline">No active tasks for this business. New AI-generated priorities will appear once their secure connection is approved.</p>`}
+ <p class="hint">These are existing business records, not new recommendations generated by three connected AIs.</p></div>
+ <div class="card"><div class="br-section-head"><h2>Executive group conversation</h2><span class="chip">Read-only cloud</span></div>
+ <div class="br-participants"><span>✧ ChatGPT</span><span>◇ Claude</span><span>✦ Grok</span><span>♛ You</span></div>
+ ${boardroomCloud.error?`<p class="err">${esc(boardroomCloud.error)}</p>`:""}
+ ${messages.length?messages.slice(-20).map(m=>`<div class="br-message"><b>${esc(speech[m.speaker]||m.speaker)}</b><p>${esc(m.message)}</p><small>${esc(m.provider_model||"")}</small></div>`).join(""):`<div class="br-empty">No live Boardroom messages yet. The provider connections are intentionally off.</div>`}
+ <label for="br_msg">Your message</label><textarea id="br_msg" rows="3" maxlength="4000" placeholder="Share an idea with your executive team...">${esc(boardroomText)}</textarea>
+ <div class="br-controls"><button class="pri" data-a="brsave|">Save my draft</button><button data-a="brrefresh|">Refresh conversation</button></div>
+ ${boardroomNotice?`<p class="mutedline" role="status">${esc(boardroomNotice)}</p>`:""}
+ <p class="hint">Drafts are saved only on this device. Save does not transmit a message or trigger AI spending. Sending to all three will be added after security testing and your separate approval.</p></div>
+ <div class="card"><div class="br-section-head"><h2>Owner approvals</h2><span class="chip">${a.length} waiting</span></div><p class="mutedline">Publishing, purchases and budget changes still need your authorization.</p><button class="pri" data-a="tab|appr">Open approval inbox</button></div>
+ <details class="card"><summary>Budget & advanced tools</summary><p class="mutedline">Boardroom allowance: $25/month, split $10 OpenAI, $8 Claude, $7 Grok. This screen cannot enable providers.</p><p class="mutedline">${boardroomCloud.loaded&&boardroomCloud.budget.length?`Recorded Boardroom spending: $${(spent/100).toFixed(2)} of $${(allowance/100).toFixed(2)}. All providers: ${boardroomCloud.budget.every(x=>x.enabled===false)?"disabled":"CHECK PROVIDER SETTINGS"}.`:"Budget records not yet loaded."}</p><button data-a="tab|team">Open previous AI Team tools</button><button data-a="tab|tasks">View all tasks</button></details>`;
 }
 function team(){
  const L=D.tasks.filter(t=>t.business==biz);
@@ -513,7 +570,7 @@ function demoReports(){return demoBanner()+demoSwitch()+`<div class="hero"><div 
 function demoTasks(){return demoBanner()+`<div class="card"><h2>Task tracking</h2><p class="mutedline">Live tasks appear after a verified Supabase sign-in. You can create local plans using AI Manager now.</p><button class="pri" data-a="tab|manager">Create a plan</button></div>`}
 function demoSettings(){return demoBanner()+`<div class="hero"><div class="eyebrow">CONTROL CENTER</div><h2>Settings & safety</h2><p>Explore safely, or connect your verified database.</p></div><div class="card"><b>Preview mode</b><p class="mutedline">Everything here is local to this browser. Marketing drafts and plans are saved on this device only. Clearing browser data may erase them.</p><button class="pri" data-a="demoff|">Switch to Supabase sign-in</button></div><div class="card"><b>Security status</b><p class="mutedline">No external publishing, advertising, purchasing, or AI execution is enabled. Live database authorization and approval enforcement are not verified by this preview.</p></div>`}
 
-function render(){nav();const a=$("#app");if(demo){a.innerHTML=({home:demoHome,manager,marketing:demoMarketing,appr:demoApprovals,settings:demoSettings,team:demoTeam,tasks:demoTasks,reports:demoReports})[tab]?.()||demoHome();return}if(!U||!K||badKey(K)){a.innerHTML=setup();return}if(!S){a.innerHTML=login();return}if(hasDeviceUnlock()&&!unlocked){a.innerHTML=lockScreen();return}a.innerHTML=({home,team,marketing,settings,tasks,appr,bk,tst,acct,reports,manager})[tab] ? ({home,team,marketing,settings,tasks,appr,bk,tst,acct,reports,manager})[tab]() : home();if(tab=="tasks"&&form)deps()}
+function render(){nav();const a=$("#app");if(demo){a.innerHTML=({home:demoHome,boardroom:demoBoardroom,manager,marketing:demoMarketing,appr:demoApprovals,settings:demoSettings,team:demoTeam,tasks:demoTasks,reports:demoReports})[tab]?.()||demoHome();return}if(!U||!K||badKey(K)){a.innerHTML=setup();return}if(!S){a.innerHTML=login();return}if(hasDeviceUnlock()&&!unlocked){a.innerHTML=lockScreen();return}a.innerHTML=({home,team,boardroom,marketing,settings,tasks,appr,bk,tst,acct,reports,manager})[tab] ? ({home,team,boardroom,marketing,settings,tasks,appr,bk,tst,acct,reports,manager})[tab]() : home();if(tab=="tasks"&&form)deps()}
 function deps(){const k=$("#n_k"),a=$("#n_a"),p=$("#n_p");if(!k||!a)return;const r=D.req.find(x=>x.action==a.value);$("#n_dl").style.display=r?"block":"none";if(r)p.innerHTML=D.tasks.filter(t=>t.business==biz&&t.action==r.requires_action&&t.status=="done").map(t=>`<option value="${t.id}">${esc(t.title)} (${esc((t.payload||{}).ref||"")})</option>`).join("")||`<option value="">No completed review yet</option>`}
 document.addEventListener('change',e=>{const el=e.target.closest('[data-review]');if(!el)return;captureCampaign();const [i,k]=el.dataset.review.split('|');if(!campaign[+i])return;campaign[+i].checks={...(campaign[+i].checks||{}),[k]:el.checked};campaignMessage='Checklist updated on this device. Save all drafts to keep it.';render()});
 async function checkFourthwallApi(force=false){
@@ -595,7 +652,7 @@ async function aiCloudAction(action,id){
   render();return;
  }
 }
-async function onclick(e){const t=e.target.closest("[data-a]");if(!t||t.tagName=="SELECT")return;const[a,x,y]=t.dataset.a.split("|");msg="";
+async function onclick(e){const br=e.target.closest("[data-a]")?.dataset.a||"";if(br==="brsave|"){boardroomText=$("#br_msg")?.value||"";if(boardroomText.trim()){LS.set("hq_boardroom_local_draft",boardroomText);boardroomNotice="Draft saved on this device only; no AI was contacted."}else{boardroomNotice="Type a message before saving."}render();return;}if(br==="brrefresh|"){boardroomText=$("#br_msg")?.value||"";boardroomNotice="";await loadBoardroomCloud();return;}const t=e.target.closest("[data-a]");if(!t||t.tagName=="SELECT")return;const[a,x,y]=t.dataset.a.split("|");msg="";
 try{
 if(["aicloudrefresh","aicloudsave","aicloudload","aiclouddelete"].includes(a)){await aiCloudAction(a,x);return}
 if(a==="airole"){
@@ -707,7 +764,7 @@ if(a=="savebudget"){const b={};for(const k of ["ads","tools","operations","other
  }
  else if(a=="savedraft"){draftText=$("#m_output")?.value||"";LS.set("hq_marketing_draft_"+biz,draftText);draftMessage="Saved in this browser only."}
  else if(a=="loaddraft"){draftText=LS.get("hq_marketing_draft_"+biz)||"";draftMessage=draftText?"Saved draft loaded.":"No saved draft for this business."}
- else if(a=="tab"){tab=x;if(x==="team"&&!demo&&S&&unlocked){await loadAiCloud()} if(x==="reports"&&!demo&&S&&unlocked&&biz==="wb")await checkFourthwallApi()}else if(a=="biz"){biz=x;aiEditId=null;aiCloud={loaded:false,error:"",items:[],busy:false};if(tab==="team"&&!demo&&S&&unlocked){await loadAiCloud()} if(tab==="reports"&&x==="wb"&&!demo&&S&&unlocked)await checkFourthwallApi()}else if(a=="form"){form=!form}
+ else if(a=="tab"){tab=x;if(x==="team"&&!demo&&S&&unlocked){await loadAiCloud()} if(x==="boardroom"&&!demo&&S&&unlocked){await loadBoardroomCloud()} if(x==="reports"&&!demo&&S&&unlocked&&biz==="wb")await checkFourthwallApi()}else if(a=="biz"){biz=x;aiEditId=null;aiCloud={loaded:false,error:"",items:[],busy:false};if(tab==="team"&&!demo&&S&&unlocked){await loadAiCloud()} if(tab==="boardroom"&&!demo&&S&&unlocked){boardroomCloud={loaded:false,loading:false,error:"",threads:[],messages:[],budget:[]};await loadBoardroomCloud()} if(tab==="reports"&&x==="wb"&&!demo&&S&&unlocked)await checkFourthwallApi()}else if(a=="form"){form=!form}
 else if(a=="cfg"){const u=$("#u").value.trim().replace(/\/$/,""),k=$("#k").value.trim();if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(u)){msg="Project URL should look like https://abcd.supabase.co";return render(msg)}const b=badKey(k);if(b){msg=b;K="";return render()}U=u;K=k;LS.set("hq_url",U);LS.set("hq_key",K)}
 else if(a=="login"){const em=$("#em").value.trim(),pw=$("#pw").value;const r=await call("/auth/v1/token?grant_type=password",{method:"POST",body:{email:em,password:pw},anon:true});if(!r.ok){msg="Sign-in failed: "+err(r)}else{S={at:r.j.access_token,rt:r.j.refresh_token,em};LS.set("hq_sess",JSON.stringify(S));unlocked=true;await load()}}
 else if(a=="logout"||a=="signout"){aiEditId=null;unlocked=false;S=null;LS.del("hq_sess");D={tasks:[],apprs:[],rules:[],req:[],mem:[]};fourthwallReport={loaded:false,ok:false,row:null,error:""};fourthwallApiTest={state:"idle",message:"Not checked yet.",count:null,statuses:null};fourthwallLastCheck=0}
