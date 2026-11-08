@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://*.supabase.co; img-src data:; base-uri 'none'; form-action 'none'">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Business HQ">
-<title>Business HQ · Gold Edition · Boardroom v3.3</title>
+<title>Business HQ · Gold Edition · Boardroom v3.4</title>
 <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=3">
 <style>
 :root{--bg:#f5f3ee;--card:#fff;--tx:#1d1d1b;--mu:#6b6a64;--ln:#e2dfd6;--ac:#c2410c;--ok:#15803d;--wa:#b45309;--bad:#b91c1c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -176,7 +176,7 @@ body{min-height:100vh;min-height:100dvh}
 /* Business HQ Boardroom integrated view — inherits Gold Edition styles */
 .br-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:0 0 16px}.br-summary>div{text-align:center;border:1px solid var(--ln);border-radius:17px;padding:13px 5px;background:linear-gradient(145deg,#fff1,transparent)}.br-summary b{display:block;font-size:25px;color:#f3d18c}.br-summary small{font-size:10px;color:var(--mu)}.br-section-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}.br-section-head h2{margin:0}.br-recommend{display:flex;gap:11px;align-items:start;padding:12px 0;border-top:1px solid #ffffff16}.br-recommend b{display:block;font-size:14px}.br-recommend small{display:block;margin-top:4px;color:var(--mu)}.br-spark{color:#f0c778}.br-participants{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0}.br-participants span{border:1px solid #a8864f66;background:#e9c47811;border-radius:99px;color:#f0d49e;padding:5px 9px;font-size:11px}.br-empty{padding:26px 14px;text-align:center;background:#08090e88;border:1px dashed #80673d88;color:#c2b7a2;border-radius:16px;font-size:13px;line-height:1.6}.br-message{background:#0003;border-radius:14px;margin:9px 0;padding:12px;border:1px solid #e9c47822}.br-message b{color:#f0cb80}.br-message p{margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px}.br-message small{color:var(--mu)}.br-controls{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}.br-controls button{min-width:0;font-size:13px}#br_msg{font-size:16px;min-height:100px}.card>summary{cursor:pointer;color:#f2d28f;font-weight:600}.card>summary+*{margin-top:12px}@media(max-width:380px){.br-section-head{align-items:start}.br-summary small{font-size:9px}}
 </style></head><body>
-<header><h1>Business HQ <small>GOLD EDITION · V3.1</small></h1></header>
+<header><h1>Business HQ <small>GOLD EDITION · V3.4</small></h1></header>
 <main id="app"><div class="hero"><div class="eyebrow">BUSINESS HQ · GOLD EDITION</div><h2>One headquarters. Two businesses.</h2><p>A simple home for your AI Manager, Marketing, AI Team, and Approvals.</p><div class="gold-beam"></div></div><h2>Your four departments</h2><div class="quickgrid"><div class="quick"><div class="symbol">✧</div><strong>AI Manager</strong><span>Give one instruction and review the plan</span></div><div class="quick"><div class="symbol">✦</div><strong>Marketing</strong><span>Prepare campaigns and drafts</span></div><div class="quick"><div class="symbol">◇</div><strong>AI Team</strong><span>See who handles each job</span></div><div class="quick"><div class="symbol">✓</div><strong>Approvals</strong><span>Review important decisions</span></div></div><section aria-label="Empire Overview preview"><div class="empire-head"><div><div class="eyebrow">THE EMPIRE OVERVIEW</div><h2>Both businesses. One screen.</h2></div></div><div class="empire-grid"><article class="empire-card"><div class="empire-tag">01 · Apparel</div><div class="empire-name">Working Bones Outfitters</div><div class="empire-gauge" style="--score:0"><div class="empire-gauge-inner"><b>—</b><small>NO DATA</small></div></div><div class="empire-data"><div><b>—</b><small>Revenue</small></div><div><b>—</b><small>Profit</small></div></div><p class="empire-note">Awaiting verified sales data</p></article><article class="empire-card"><div class="empire-tag">02 · Publishing</div><div class="empire-name">Funny Bones Kids</div><div class="empire-gauge" style="--score:0"><div class="empire-gauge-inner"><b>—</b><small>NO DATA</small></div></div><div class="empire-data"><div><b>—</b><small>Revenue</small></div><div><b>—</b><small>Profit</small></div></div><p class="empire-note">Awaiting verified sales data</p></article></div></section><div class="card" style="margin-top:18px"><b>Preview only</b><p class="mutedline">This file preview shows the design; open the hosted website to use the working app. If the buttons don't respond, the preview is blocking JavaScript. A securely hosted HTTPS version is required to test the interactive app in Safari. No ads, purchases, or publishing are enabled.</p></div></main><nav id="nav"></nav>
 <script>
 "use strict";
@@ -359,6 +359,9 @@ let boardroomNotice="";
 let boardroomSending=false;
 let boardroomRouterStatus="Not tested yet";
 let boardroomRouterBusy=false;
+let boardroomPreviewBusy=false;
+let boardroomPreviewStatus="Not previewed yet";
+let boardroomPreviewSummary=[];
 async function loadBoardroomCloud(){
  if(!S||!unlocked||!owner()||boardroomCloud.loading)return;
  boardroomCloud.loading=true;
@@ -408,7 +411,10 @@ function boardroom(){
  ${boardroomNotice?`<p class="mutedline" role="status">${esc(boardroomNotice)}</p>`:""}
  <p class="hint">Your message is saved to the owner-only Supabase conversation. AI providers remain disabled and will not reply yet. Saving a message makes no paid API calls.</p></div>
  <div class="card"><div class="br-section-head"><h2>Owner approvals</h2><span class="chip">${a.length} waiting</span></div><p class="mutedline">Publishing, purchases and budget changes still need your authorization.</p><button class="pri" data-a="tab|appr">Open approval inbox</button></div>
- <details class="card"><summary>Budget & advanced tools</summary><p class="mutedline">Check the secure Boardroom router using your current sign-in. This does not contact any AI or spend money.</p><button data-a="brtest|" ${boardroomRouterBusy?"disabled":""}>${boardroomRouterBusy?"Checking…":"Test AI Connection"}</button><p class="mutedline" role="status">${esc(boardroomRouterStatus)}</p><p class="mutedline">Boardroom allowance: $25/month, split $10 OpenAI, $8 Claude, $7 Grok. This screen cannot enable providers.</p><p class="mutedline">${boardroomCloud.loaded&&boardroomCloud.budget.length?`Recorded Boardroom spending: $${(spent/100).toFixed(2)} of $${(allowance/100).toFixed(2)}. All providers: ${boardroomCloud.budget.every(x=>x.enabled===false)?"disabled":"CHECK PROVIDER SETTINGS"}.`:"Budget records not yet loaded."}</p><button data-a="tab|team">Open previous AI Team tools</button><button data-a="tab|tasks">View all tasks</button></details>`;
+ <details class="card" ${boardroomPreviewSummary.length||boardroomPreviewStatus!=="Not previewed yet"?"open":""}><summary>Budget & advanced tools</summary><p class="mutedline">Check the secure Boardroom router using your current sign-in. This does not contact any AI or spend money.</p><button data-a="brtest|" ${boardroomRouterBusy?"disabled":""}>${boardroomRouterBusy?"Checking…":"Test AI Connection"}</button><p class="mutedline" role="status">${esc(boardroomRouterStatus)}</p>
+ <div class="br-preview-tools"><button data-a="brpreview|" ${boardroomPreviewBusy?"disabled":""}>${boardroomPreviewBusy?"Preparing preview…":"Preview AI Discussion"}</button><p class="mutedline" role="status">${esc(boardroomPreviewStatus)}</p>
+ ${boardroomPreviewSummary.length?`<div class="br-preview-list">${boardroomPreviewSummary.map(item=>`<div class="br-preview-entry"><b>${esc(item.speaker)} · ${esc(item.provider)}</b><p class="hint">${esc(item.instruction)}</p><small>${esc(item.count)} conversation message(s) available; preview only, not sent.</small></div>`).join("")}</div>`:""}</div>
+ <p class="mutedline">Boardroom allowance: $25/month, split $10 OpenAI, $8 Claude, $7 Grok. This screen cannot enable providers.</p><p class="mutedline">${boardroomCloud.loaded&&boardroomCloud.budget.length?`Recorded Boardroom spending: $${(spent/100).toFixed(2)} of $${(allowance/100).toFixed(2)}. All providers: ${boardroomCloud.budget.every(x=>x.enabled===false)?"disabled":"CHECK PROVIDER SETTINGS"}.`:"Budget records not yet loaded."}</p><button data-a="tab|team">Open previous AI Team tools</button><button data-a="tab|tasks">View all tasks</button></details>`;
 }
 function team(){
  const L=D.tasks.filter(t=>t.business==biz);
@@ -681,6 +687,43 @@ if(br==="brtest|"){
  }catch(error){
    boardroomRouterStatus="Connection test failed: "+String(error.message||error)+". No paid AI was called.";
  }finally{boardroomRouterBusy=false;render()}
+ return;
+}
+if(br==="brpreview|"){
+ if(boardroomPreviewBusy)return;
+ boardroomText=$("#br_msg")?.value||boardroomText;
+ if(!S||!unlocked||!owner()){
+   boardroomPreviewStatus="Sign in as the business owner first.";
+   render();return;
+ }
+ boardroomPreviewBusy=true;
+ boardroomPreviewStatus="Checking preview routing…";
+ boardroomPreviewSummary=[];
+ render();
+ try{
+   const response=await call("/functions/v1/hq-boardroom-router",{
+     method:"POST",body:{action:"preview",business:biz}
+   });
+   const data=response.j||{};
+   if(response.ok&&data.state==="preview"&&data.can_send_to_ai===false&&data.charged===false){
+     const assignments=Array.isArray(data.assignments)?data.assignments:[];
+     const roles=["chatgpt","claude","grok"];
+     const providers=["openai","anthropic","xai"];
+     const correct=assignments.length===3&&roles.every((role,i)=>assignments[i]?.speaker===role&&assignments[i]?.provider===providers[i]&&assignments[i]?.execution_enabled===false);
+     if(correct){
+       boardroomPreviewSummary=assignments.map(x=>({speaker:x.speaker,provider:x.provider,instruction:String(x.instruction||""),count:Array.isArray(x.conversation)?x.conversation.length:0}));
+       boardroomPreviewStatus="PASS · Three AI assignments prepared · No AI contacted · $0 charged.";
+     }else if(!assignments.length&&String(data.message||"").includes("No conversation")){
+       boardroomPreviewStatus="No saved Boardroom conversation yet. Send an owner message first; no AI was contacted.";
+     }else{
+       boardroomPreviewStatus="REVIEW · Preview returned unexpected assignment data. No paid request was authorized.";
+     }
+   }else{
+     boardroomPreviewStatus="Preview unavailable (HTTP "+response.status+"): "+err(response)+". No paid AI call authorized.";
+   }
+ }catch(error){
+   boardroomPreviewStatus="Preview connection failed: "+String(error.message||error);
+ }finally{boardroomPreviewBusy=false;render()}
  return;
 }
 if(br==="brsend|"){
