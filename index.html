@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://*.supabase.co; img-src data:; base-uri 'none'; form-action 'none'">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Business HQ">
-<title>Business HQ · Gold Edition · Boardroom v3.5</title>
+<title>Business HQ · Gold Edition · Boardroom v3.6</title>
 <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=3">
 <style>
 :root{--bg:#f5f3ee;--card:#fff;--tx:#1d1d1b;--mu:#6b6a64;--ln:#e2dfd6;--ac:#c2410c;--ok:#15803d;--wa:#b45309;--bad:#b91c1c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -175,8 +175,19 @@ body{min-height:100vh;min-height:100dvh}
 
 /* Business HQ Boardroom integrated view — inherits Gold Edition styles */
 .br-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:0 0 16px}.br-summary>div{text-align:center;border:1px solid var(--ln);border-radius:17px;padding:13px 5px;background:linear-gradient(145deg,#fff1,transparent)}.br-summary b{display:block;font-size:25px;color:#f3d18c}.br-summary small{font-size:10px;color:var(--mu)}.br-section-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}.br-section-head h2{margin:0}.br-recommend{display:flex;gap:11px;align-items:start;padding:12px 0;border-top:1px solid #ffffff16}.br-recommend b{display:block;font-size:14px}.br-recommend small{display:block;margin-top:4px;color:var(--mu)}.br-spark{color:#f0c778}.br-participants{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0}.br-participants span{border:1px solid #a8864f66;background:#e9c47811;border-radius:99px;color:#f0d49e;padding:5px 9px;font-size:11px}.br-empty{padding:26px 14px;text-align:center;background:#08090e88;border:1px dashed #80673d88;color:#c2b7a2;border-radius:16px;font-size:13px;line-height:1.6}.br-message{background:#0003;border-radius:14px;margin:9px 0;padding:12px;border:1px solid #e9c47822}.br-message b{color:#f0cb80}.br-message p{margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px}.br-message small{color:var(--mu)}.br-controls{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}.br-controls button{min-width:0;font-size:13px}#br_msg{font-size:16px;min-height:100px}.card>summary{cursor:pointer;color:#f2d28f;font-weight:600}.card>summary+*{margin-top:12px}@media(max-width:380px){.br-section-head{align-items:start}.br-summary small{font-size:9px}}
+
+/* v3.6 executive voice studio — inherits Gold Edition card/buttons. */
+.br-voice-settings{margin-top:12px;border-top:1px solid #e9c47830;padding-top:11px}
+.br-voice-settings summary{color:#f0d098;cursor:pointer;font-weight:650;padding:8px 0}
+.br-voice-choices{display:grid;grid-template-columns:1fr;gap:4px;margin:10px 0}
+.br-voice-choices label{display:block;min-width:0}
+.br-voice-choices select{min-width:0;max-width:100%;font-size:16px}
+.br-voice-samples{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:12px 0}
+.br-voice-samples button{font-size:11px;padding:8px 4px;min-width:0;white-space:normal}
+#hq_voice_rate{accent-color:#efc77f;display:block;width:100%}
+@media(max-width:380px){.br-voice-samples{grid-template-columns:1fr}}
 </style></head><body>
-<header><h1>Business HQ <small>GOLD EDITION · V3.5</small></h1></header>
+<header><h1>Business HQ <small>GOLD EDITION · V3.6</small></h1></header>
 <main id="app"><div class="hero"><div class="eyebrow">BUSINESS HQ · GOLD EDITION</div><h2>One headquarters. Two businesses.</h2><p>A simple home for your AI Manager, Marketing, AI Team, and Approvals.</p><div class="gold-beam"></div></div><h2>Your four departments</h2><div class="quickgrid"><div class="quick"><div class="symbol">✧</div><strong>AI Manager</strong><span>Give one instruction and review the plan</span></div><div class="quick"><div class="symbol">✦</div><strong>Marketing</strong><span>Prepare campaigns and drafts</span></div><div class="quick"><div class="symbol">◇</div><strong>AI Team</strong><span>See who handles each job</span></div><div class="quick"><div class="symbol">✓</div><strong>Approvals</strong><span>Review important decisions</span></div></div><section aria-label="Empire Overview preview"><div class="empire-head"><div><div class="eyebrow">THE EMPIRE OVERVIEW</div><h2>Both businesses. One screen.</h2></div></div><div class="empire-grid"><article class="empire-card"><div class="empire-tag">01 · Apparel</div><div class="empire-name">Working Bones Outfitters</div><div class="empire-gauge" style="--score:0"><div class="empire-gauge-inner"><b>—</b><small>NO DATA</small></div></div><div class="empire-data"><div><b>—</b><small>Revenue</small></div><div><b>—</b><small>Profit</small></div></div><p class="empire-note">Awaiting verified sales data</p></article><article class="empire-card"><div class="empire-tag">02 · Publishing</div><div class="empire-name">Funny Bones Kids</div><div class="empire-gauge" style="--score:0"><div class="empire-gauge-inner"><b>—</b><small>NO DATA</small></div></div><div class="empire-data"><div><b>—</b><small>Revenue</small></div><div><b>—</b><small>Profit</small></div></div><p class="empire-note">Awaiting verified sales data</p></article></div></section><div class="card" style="margin-top:18px"><b>Preview only</b><p class="mutedline">This file preview shows the design; open the hosted website to use the working app. If the buttons don't respond, the preview is blocking JavaScript. A securely hosted HTTPS version is required to test the interactive app in Safari. No ads, purchases, or publishing are enabled.</p></div></main><nav id="nav"></nav>
 <script>
 "use strict";
@@ -386,33 +397,107 @@ async function loadBoardroomCloud(){
  if(tab==="boardroom")render();
 }
 function demoBoardroom(){return `<div class="hero"><div class="eyebrow">DEMO · NO LIVE AI</div><h2>Executive Boardroom</h2><p>Sign in to see your business records.</p><div class="gold-beam"></div></div><div class="card"><h2>Team conversation</h2><p class="mutedline">No live provider connections are enabled.</p></div>`;}
-// Boardroom Voice v3.5: device-native speech only. No microphone stream is retained.
-let hqTalking=false, hqRecognizer=null;
+// Boardroom Voice v3.6: local device voices only; no API or paid calls.
+// Different voices represent saved messages; they do not imply the AI provider is connected.
+let hqTalking=false, hqRecognizer=null, hqSpeechGeneration=0;
+const HQ_VOICE_KEYS=["chatgpt","claude","grok"];
+const HQ_VOICE_NAMES={chatgpt:"ChatGPT",claude:"Claude",grok:"Grok"};
+let hqVoicePrefs={};
+try{hqVoicePrefs=JSON.parse(LS.get("hq_voice_prefs_v36")||"{}")||{}}catch(_){hqVoicePrefs={}}
 function hqVoiceState(message){const n=document.getElementById("br_voice_status");if(n)n.textContent=message;}
+function hqVoiceList(){
+ if(!("speechSynthesis" in window))return [];
+ return window.speechSynthesis.getVoices().filter(v=>/^en([-_]|$)/i.test(v.lang));
+}
+function hqVoiceId(v){return v.voiceURI||v.name+"|"+v.lang;}
+function hqVoiceFor(speaker){
+ const voices=hqVoiceList();
+ const selected=hqVoicePrefs[speaker];
+ if(selected&&selected!=="auto")return voices.find(v=>hqVoiceId(v)===selected)||null;
+ const idx=HQ_VOICE_KEYS.indexOf(speaker);
+ // Choose different installed English voices whenever possible.
+ return voices[(idx<0?0:idx)%voices.length]||null;
+}
+function hqVoiceSave(){
+ try{LS.set("hq_voice_prefs_v36",JSON.stringify(hqVoicePrefs))}catch(_){}
+}
+function hqVoiceOptions(){
+ const voices=hqVoiceList();
+ return HQ_VOICE_KEYS.map((speaker,i)=>{
+   const active=hqVoicePrefs[speaker]||"auto";
+   return `<label>${HQ_VOICE_NAMES[speaker]} voice<select data-voice-speaker="${speaker}" aria-label="${HQ_VOICE_NAMES[speaker]} voice"><option value="auto" ${active==="auto"?"selected":""}>Automatic (voice ${i+1})</option>${voices.map(v=>`<option value="${esc(hqVoiceId(v))}" ${active===hqVoiceId(v)?"selected":""}>${esc(v.name)} · ${esc(v.lang)}</option>`).join("")}</select></label>`;
+ }).join("");
+}
+function hqUpdateVoiceOptions(){
+ const target=document.getElementById("hq_voice_choices");
+ if(target)target.innerHTML=hqVoiceOptions();
+ const label=document.getElementById("hq_voice_inventory");
+ if(label)label.textContent=hqVoiceList().length?`${hqVoiceList().length} English voices available on this iPhone.`:"No English voices listed yet. Try playing a sample, or use your iPhone's speech voices.";
+}
+if("speechSynthesis" in window){
+ window.speechSynthesis.addEventListener?.("voiceschanged",hqUpdateVoiceOptions);
+}
 function hqStopVoice(){
+ hqSpeechGeneration++;
  try{window.speechSynthesis?.cancel()}catch(_){}
  if(hqRecognizer){try{hqRecognizer.abort()}catch(_){}hqRecognizer=null;}
  hqTalking=false;hqVoiceState("Voice stopped.");
 }
+function hqRate(){const r=Number(hqVoicePrefs.rate);return Number.isFinite(r)?Math.max(.78,Math.min(1.10,r)):.92;}
+function hqSpeakChunks(text){
+ // Speak short phrases with punctuation intact; avoid a robotic, uninterrupted paragraph.
+ const raw=String(text).replace(/\s+/g," ").trim().slice(0,3500);
+ const sentences=raw.match(/[^.!?;]+[.!?;]*/g)||[raw];
+ const out=[];
+ for(const sentence of sentences){
+  let part=sentence.trim();
+  while(part.length>210){
+   let cut=part.lastIndexOf(",",210);
+   if(cut<75)cut=part.lastIndexOf(" ",210);
+   if(cut<75)cut=210;
+   out.push(part.slice(0,cut+1).trim());part=part.slice(cut+1).trim();
+  }
+  if(part)out.push(part);
+ }
+ return out.slice(0,28);
+}
 function hqSayLines(lines){
- if(!("speechSynthesis" in window)){hqVoiceState("Spoken replies are unavailable on this device. You can still read the briefing.");return;}
+ if(!("speechSynthesis" in window)){hqVoiceState("Spoken replies are unavailable here; the briefing text remains visible.");return;}
  hqStopVoice();
  const synth=window.speechSynthesis;
- const voices=synth.getVoices().filter(v=>/^en([-_]|$)/i.test(v.lang));
- // Distinct installed voices when possible; never claim the vendor's native voice.
- const speakers=["chatgpt","claude","grok"];
- const picks={};speakers.forEach((k,i)=>{picks[k]=voices[i%Math.max(1,voices.length)]||null;});
- const queue=lines.filter(x=>x&&x.text&&String(x.text).trim()).slice(0,12);
- if(!queue.length){hqVoiceState("Nothing to read yet.");return;}
- hqTalking=true;hqVoiceState("Speaking through your selected audio output…");
- queue.forEach((line,i)=>{
-   const utterance=new SpeechSynthesisUtterance(String(line.text).slice(0,3500));
-   utterance.lang="en-US";utterance.rate=.94;utterance.pitch=line.speaker==="grok"?1.13:line.speaker==="claude"?.92:1;
-   if(picks[line.speaker])utterance.voice=picks[line.speaker];
-   utterance.onerror=()=>{hqTalking=false;hqVoiceState("Speech playback was interrupted. Tap Speak to try again.");};
-   if(i===queue.length-1)utterance.onend=()=>{hqTalking=false;hqVoiceState("Briefing finished.");};
-   synth.speak(utterance);
+ const tasks=[];
+ lines.filter(x=>x&&x.text&&String(x.text).trim()).slice(0,12).forEach(line=>{
+   hqSpeakChunks(line.text).forEach(text=>tasks.push({text,speaker:line.speaker||"chatgpt"}));
  });
+ if(!tasks.length){hqVoiceState("Nothing to read yet.");return;}
+ const generation=++hqSpeechGeneration;
+ let index=0;
+ hqTalking=true;
+ hqVoiceState("Playing on your selected iPhone audio output…");
+ function speakNext(){
+  if(generation!==hqSpeechGeneration)return;
+  if(index>=tasks.length){hqTalking=false;hqVoiceState("Briefing finished.");return;}
+  const task=tasks[index++];
+  const u=new SpeechSynthesisUtterance(task.text);
+  u.lang="en-US";u.rate=hqRate();u.pitch=task.speaker==="grok"?1.05:task.speaker==="claude"?.96:1;
+  const voice=hqVoiceFor(task.speaker);if(voice)u.voice=voice;
+  u.onend=speakNext;
+  u.onerror=e=>{
+   if(generation!==hqSpeechGeneration)return;
+   if(e.error==="canceled"||e.error==="interrupted")return;
+   hqTalking=false;hqVoiceState("Speech paused or unavailable. Try a different installed voice.");
+  };
+  try{synth.speak(u)}catch(_){hqTalking=false;hqVoiceState("Speech couldn't start. Try a different voice.");}
+ }
+ speakNext();
+}
+function hqVoiceTest(speaker){
+ const phrases={
+ chatgpt:"Good morning, boss. I'm your AI manager. Here's what needs your attention today.",
+ claude:"Hello. I'm Claude. I'll review the technical details and flag anything that needs checking.",
+ grok:"Hey, boss. Grok here. Let's find an idea that actually gets people talking about Working Bones."
+ };
+ hqSayLines([{speaker,text:phrases[speaker]||phrases.chatgpt}]);
 }
 function hqBriefingText(){
  const approvals=D.apprs.filter(x=>x.business===biz);
@@ -464,7 +549,14 @@ function boardroom(){
  <div class="card"><div class="br-section-head"><h2>🎙 HQ Voice Briefing</h2><span class="chip">Device speech · No AI charges</span></div>
  <p class="mutedline">Hear your latest loaded tasks, approvals, and available store reporting. This is a spoken data summary—not yet a live three-AI conversation.</p>
  <div class="br-controls"><button class="pri" data-a="brspeak|">▶ Hear my briefing</button><button data-a="brteamvoice|">Hear AI replies</button><button data-a="brstopvoice|">■ Stop voice</button></div>
- <p class="mutedline" id="br_voice_status" role="status">AirPods work as your iPhone audio output. Start playback with a tap; this website cannot wake itself when closed.</p></div>
+ <details class="br-voice-settings"><summary>Voice Studio · Choose voices & pace</summary>
+ <p class="hint" id="hq_voice_inventory">Available English voices depend on your iPhone.</p>
+ <div id="hq_voice_choices" class="br-voice-choices">${hqVoiceOptions()}</div>
+ <label for="hq_voice_rate">Speaking pace <span id="hq_voice_rate_label">${Math.round(hqRate()*100)}%</span><input id="hq_voice_rate" type="range" min="0.78" max="1.10" step="0.02" value="${hqRate()}"></label>
+ <div class="br-voice-samples"><button data-a="brvoicetest|chatgpt">▶ ChatGPT sample</button><button data-a="brvoicetest|claude">▶ Claude sample</button><button data-a="brvoicetest|grok">▶ Grok sample</button></div>
+ <p class="hint">These are iPhone device voices, not the providers' original voices. Voice choices stay on this device; they don't use API credits.</p>
+ </details>
+ <p class="mutedline" id="br_voice_status" role="status">AirPods use your iPhone audio output. Tap a sample or Hear my briefing to start. HQ cannot listen while Safari is closed.</p></div>
  <div class="card"><div class="br-section-head"><h2>Recommended next steps</h2><span class="chip">From saved tasks</span></div>
  ${a.length?`<p class="mutedline">${a.length} decision(s) need your review.</p><button class="pri" data-a="tab|appr">Review approvals</button>`:""}
  ${waiting.length?waiting.slice(0,3).map(t=>`<div class="br-recommend"><span class="br-spark">✦</span><div><b>${esc(t.title||"Untitled task")}</b><small>${esc(t.status||"Pending")} · ${esc(t.department||"Business operations")}</small></div></div>`).join(""):`<p class="mutedline">No active tasks for this business. New AI-generated priorities will appear once their secure connection is approved.</p>`}
@@ -730,6 +822,7 @@ async function aiCloudAction(action,id){
  }
 }
 async function onclick(e){const br=e.target.closest("[data-a]")?.dataset.a||"";
+if(br.startsWith("brvoicetest|")){hqVoiceTest(br.split("|")[1]);return;}
 if(br==="brspeak|"){boardroomText=$("#br_msg")?.value||boardroomText;hqSayLines([{speaker:"chatgpt",text:hqBriefingText()}]);return;}
 if(br==="brteamvoice|"){boardroomText=$("#br_msg")?.value||boardroomText;hqReadTeam();return;}
 if(br==="brstopvoice|"){hqStopVoice();return;}
@@ -952,12 +1045,27 @@ async function runtests(){busy=true;tests=[];render();const T=(n,s,d)=>tests.pus
  T("Write permissions & approval enforcement","NOT RUN","Requires controlled testing before external actions can be enabled.");
  busy=false;render()}
 
+document.addEventListener("input",e=>{
+ if(e.target.id==="hq_voice_rate"){
+  const label=document.getElementById("hq_voice_rate_label");if(label)label.textContent=Math.round(Number(e.target.value)*100)+"%";
+ }
+});
 document.addEventListener("click",onclick);
 let leftPage=false;
 document.addEventListener("visibilitychange",()=>{
  if(document.hidden)hqStopVoice();
  if(document.hidden){leftPage=true;return}
  if(leftPage&&hasDeviceUnlock()&&S){leftPage=false;unlocked=false;D={tasks:[],apprs:[],rules:[],req:[],mem:[]};render()}
+});
+document.addEventListener("change",e=>{
+ if(e.target.matches("[data-voice-speaker]")){
+  const speaker=e.target.dataset.voiceSpeaker;
+  if(HQ_VOICE_KEYS.includes(speaker)){hqVoicePrefs[speaker]=e.target.value;hqVoiceSave();}
+ }
+ if(e.target.id==="hq_voice_rate"){
+  hqVoicePrefs.rate=Number(e.target.value);hqVoiceSave();
+  const label=document.getElementById("hq_voice_rate_label");if(label)label.textContent=Math.round(hqRate()*100)+"%";
+ }
 });
 document.addEventListener("change",e=>{if(e.target.id=="n_k"){$("#n_a").innerHTML=acts(e.target.value)}if(e.target.id=="n_k"||e.target.id=="n_a")deps()});
 setInterval(()=>{if(S&&unlocked&&!document.hidden&&!/INPUT|TEXTAREA|SELECT/.test((document.activeElement||{}).tagName||"")&&!busy)load()},30000);
