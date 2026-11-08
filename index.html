@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://*.supabase.co; img-src data:; base-uri 'none'; form-action 'none'">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Business HQ">
-<title>Business HQ · Gold Edition · Boardroom v3.1</title>
+<title>Business HQ · Gold Edition · Boardroom v3.3</title>
 <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=3">
 <style>
 :root{--bg:#f5f3ee;--card:#fff;--tx:#1d1d1b;--mu:#6b6a64;--ln:#e2dfd6;--ac:#c2410c;--ok:#15803d;--wa:#b45309;--bad:#b91c1c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -357,6 +357,8 @@ let boardroomCloud={loaded:false,loading:false,error:"",threads:[],messages:[],b
 let boardroomText=LS.get("hq_boardroom_local_draft")||"";
 let boardroomNotice="";
 let boardroomSending=false;
+let boardroomRouterStatus="Not tested yet";
+let boardroomRouterBusy=false;
 async function loadBoardroomCloud(){
  if(!S||!unlocked||!owner()||boardroomCloud.loading)return;
  boardroomCloud.loading=true;
@@ -406,7 +408,7 @@ function boardroom(){
  ${boardroomNotice?`<p class="mutedline" role="status">${esc(boardroomNotice)}</p>`:""}
  <p class="hint">Your message is saved to the owner-only Supabase conversation. AI providers remain disabled and will not reply yet. Saving a message makes no paid API calls.</p></div>
  <div class="card"><div class="br-section-head"><h2>Owner approvals</h2><span class="chip">${a.length} waiting</span></div><p class="mutedline">Publishing, purchases and budget changes still need your authorization.</p><button class="pri" data-a="tab|appr">Open approval inbox</button></div>
- <details class="card"><summary>Budget & advanced tools</summary><p class="mutedline">Boardroom allowance: $25/month, split $10 OpenAI, $8 Claude, $7 Grok. This screen cannot enable providers.</p><p class="mutedline">${boardroomCloud.loaded&&boardroomCloud.budget.length?`Recorded Boardroom spending: $${(spent/100).toFixed(2)} of $${(allowance/100).toFixed(2)}. All providers: ${boardroomCloud.budget.every(x=>x.enabled===false)?"disabled":"CHECK PROVIDER SETTINGS"}.`:"Budget records not yet loaded."}</p><button data-a="tab|team">Open previous AI Team tools</button><button data-a="tab|tasks">View all tasks</button></details>`;
+ <details class="card"><summary>Budget & advanced tools</summary><p class="mutedline">Check the secure Boardroom router using your current sign-in. This does not contact any AI or spend money.</p><button data-a="brtest|" ${boardroomRouterBusy?"disabled":""}>${boardroomRouterBusy?"Checking…":"Test AI Connection"}</button><p class="mutedline" role="status">${esc(boardroomRouterStatus)}</p><p class="mutedline">Boardroom allowance: $25/month, split $10 OpenAI, $8 Claude, $7 Grok. This screen cannot enable providers.</p><p class="mutedline">${boardroomCloud.loaded&&boardroomCloud.budget.length?`Recorded Boardroom spending: $${(spent/100).toFixed(2)} of $${(allowance/100).toFixed(2)}. All providers: ${boardroomCloud.budget.every(x=>x.enabled===false)?"disabled":"CHECK PROVIDER SETTINGS"}.`:"Budget records not yet loaded."}</p><button data-a="tab|team">Open previous AI Team tools</button><button data-a="tab|tasks">View all tasks</button></details>`;
 }
 function team(){
  const L=D.tasks.filter(t=>t.business==biz);
@@ -654,6 +656,33 @@ async function aiCloudAction(action,id){
  }
 }
 async function onclick(e){const br=e.target.closest("[data-a]")?.dataset.a||"";
+if(br==="brtest|"){
+ if(boardroomRouterBusy)return;
+ boardroomText=$("#br_msg")?.value||boardroomText;
+ if(!S||!unlocked||!owner()){
+   boardroomRouterStatus="Sign in as a business owner first.";
+   render();return;
+ }
+ boardroomRouterBusy=true;
+ boardroomRouterStatus="Checking secure Boardroom connection…";
+ render();
+ try{
+   const response=await call("/functions/v1/hq-boardroom-router",{
+     method:"POST",body:{action:"status",business:biz}
+   });
+   if(response.ok&&response.j?.state==="locked"&&response.j?.can_send_to_ai===false&&response.j?.charged===false){
+     const b=response.j.budget||{};
+     boardroomRouterStatus="CONNECTED · Owner verified · Paid AI locked · Boardroom recorded: $"+((Number(b.spent_cents)||0)/100).toFixed(2)+" spent, $"+((Number(b.reserved_cents)||0)/100).toFixed(2)+" reserved.";
+   }else if(response.ok){
+     boardroomRouterStatus="REVIEW: Router responded, but the expected locked safety state was not confirmed.";
+   }else{
+     boardroomRouterStatus="Not connected (HTTP "+response.status+"): "+err(response)+". No paid AI was called.";
+   }
+ }catch(error){
+   boardroomRouterStatus="Connection test failed: "+String(error.message||error)+". No paid AI was called.";
+ }finally{boardroomRouterBusy=false;render()}
+ return;
+}
 if(br==="brsend|"){
  if(boardroomSending)return;
  const current=($("#br_msg")?.value||"").trim();
