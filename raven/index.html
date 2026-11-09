@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Business HQ Raven Voice Test</title>
+<style>
+:root{--card:#111009;--line:#3a3115;--gold:#d4af37;--gold2:#f3d77a;--text:#f1ead6;--dim:#a89c78;--red:#ff6b6b;--ok:#7bd88f}
+*{box-sizing:border-box}html,body{margin:0;background:#000;color:var(--text);font:16px/1.45 -apple-system,system-ui,sans-serif}
+body{padding:max(16px,env(safe-area-inset-top)) 16px max(24px,env(safe-area-inset-bottom));max-width:560px;margin:0 auto}
+h1{font:600 22px Georgia,serif;color:var(--gold);margin:4px 0 2px}h2{font:600 15px Georgia,serif;color:var(--gold2);margin:0 0 8px}
+.sub,.note{color:var(--dim);font-size:13px}.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+textarea,select{width:100%;background:#000;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;font:16px/1.4 -apple-system,system-ui,sans-serif}textarea{min-height:96px}
+button{background:var(--gold);color:#000;border:0;border-radius:12px;padding:12px 16px;font:600 15px inherit;margin:8px 8px 0 0;cursor:pointer}
+button.s{background:transparent;color:var(--gold);border:1px solid var(--gold);font-weight:500}button:disabled{opacity:.4}
+table{width:100%;border-collapse:collapse;font-size:14px}td{padding:5px 4px;border-bottom:1px solid var(--line);vertical-align:top}td:last-child{text-align:right;font-weight:600}
+.ok{color:var(--ok)}.bad{color:var(--red)}.mid{color:var(--gold2)}
+#log{font:12px/1.5 ui-monospace,Menlo,monospace;color:#cfc29a;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto;background:#000;border:1px solid var(--line);border-radius:10px;padding:8px}
+summary{cursor:pointer;color:var(--gold2);font-weight:600}:focus-visible{outline:2px solid var(--gold2);outline-offset:2px}
+</style></head><body>
+<h1>Business HQ Raven Voice Test</h1>
+<p class="sub">Step 1 checks whether this page can run Raven's threaded engine. The Apple voice below is a labeled fallback, not Raven.</p>
+
+<div class="card"><h2>1. Environment check</h2>
+<table id="chk"></table>
+<button class="s" id="coi" type="button">Try isolation helper (service worker)</button>
+<button class="s" id="rerun" type="button">Re-check</button>
+<div class="note" id="coiMsg"></div></div>
+
+<div class="card"><h2>2. Sentence</h2>
+<textarea id="txt">Good morning, boss. Welcome back to Business HQ. Let's see what the team has accomplished today.</textarea></div>
+
+<div class="card"><h2>3. Raven neural voice</h2>
+<button id="rLoad" type="button" disabled>Load Model</button>
+<button id="rGen" type="button" disabled>Generate &amp; Play</button>
+<div class="note" id="rMsg">Not wired. Raven's browser API has not been verified, so no Raven calls exist in this file. These buttons enable only when an adapter registers as window.HQ_RAVEN (see the handoff).</div></div>
+
+<div class="card"><h2>4. Apple voice fallback (not Raven)</h2>
+<select id="vsel" aria-label="Apple voice"></select>
+<button class="s" id="aGen" type="button">Generate &amp; Play (Apple fallback)</button>
+<button class="s" id="aStop" type="button">Stop</button>
+<div class="note" id="aMsg"></div></div>
+
+<div class="card"><details><summary>Diagnostics</summary><div id="log"></div>
+<button class="s" id="copy" type="button">Copy report</button></details></div>
+
+<script>
+(function(){'use strict';
+var $=function(i){return document.getElementById(i)},lines=[];
+function log(m){lines.push('['+new Date().toLocaleTimeString()+'] '+m);$('log').textContent=lines.join('\n');$('log').scrollTop=1e9}
+var W={simd:[0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,10,1,8,0,65,0,253,15,253,98,11],
+threads:[0,97,115,109,1,0,0,0,1,4,1,96,0,0,3,2,1,0,5,4,1,3,1,1,10,11,1,9,0,65,0,254,16,2,0,26,11],
+relaxed:[0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,15,1,13,0,65,1,253,15,65,2,253,15,253,128,2,11]};
+function wv(k){try{return WebAssembly.validate(new Uint8Array(W[k]))}catch(e){return false}}
+function row(label,val,cls){var tr=document.createElement('tr'),a=document.createElement('td'),b=document.createElement('td');a.textContent=label;b.textContent=val;b.className=cls||'';tr.appendChild(a);tr.appendChild(b);$('chk').appendChild(tr);log(label+': '+val)}
+async function check(){
+  $('chk').textContent='';
+  row('Secure context (https)',String(window.isSecureContext),window.isSecureContext?'ok':'bad');
+  var iso=!!window.crossOriginIsolated;row('Cross-origin isolated',String(iso),iso?'ok':'bad');
+  row('SharedArrayBuffer',typeof SharedArrayBuffer!=='undefined'?'available':'missing',typeof SharedArrayBuffer!=='undefined'?'ok':'bad');
+  row('Web Worker',typeof Worker!=='undefined'?'yes':'no',typeof Worker!=='undefined'?'ok':'bad');
+  row('WebAssembly SIMD',wv('simd')?'yes':'no',wv('simd')?'ok':'bad');
+  row('WebAssembly threads',wv('threads')?'yes':'no',wv('threads')?'ok':'mid');
+  row('Relaxed SIMD (info only)',wv('relaxed')?'yes':'no','mid');
+  row('CPU threads reported',String(navigator.hardwareConcurrency||'unknown'),'mid');
+  row('Service worker controls page',navigator.serviceWorker&&navigator.serviceWorker.controller?'yes':'no','mid');
+  try{var r=await fetch(location.href,{cache:'no-store'});row('Page header COOP',r.headers.get('cross-origin-opener-policy')||'none',r.headers.get('cross-origin-opener-policy')?'ok':'bad');row('Page header COEP',r.headers.get('cross-origin-embedder-policy')||'none',r.headers.get('cross-origin-embedder-policy')?'ok':'bad')}catch(e){row('Header probe','failed: '+e.message,'bad')}
+  log('UA: '+navigator.userAgent);
+  $('coiMsg').textContent=iso?'Isolated: the threaded engine can be tried.':'Not isolated. Ordinary GitHub Pages cannot send the required headers. Tap "Try isolation helper", or host on a service that supports a _headers file.';
+}
+$('rerun').addEventListener('click',check);
+$('coi').addEventListener('click',async function(){
+  if(!('serviceWorker' in navigator)){$('coiMsg').textContent='Service workers unavailable here.';return}
+  try{var reg=await navigator.serviceWorker.register('coi-sw.js');log('SW registered, scope '+reg.scope);
+    $('coiMsg').textContent='Helper installed. Reloading once...';
+    var n=sessionStorage.getItem('hq_coi_reload');if(!n){sessionStorage.setItem('hq_coi_reload','1');setTimeout(function(){location.reload()},900)}else{$('coiMsg').textContent='Reloaded once already. If it still says not isolated, this iPhone/host combination does not work with the helper.';check()}
+  }catch(e){$('coiMsg').textContent='Helper failed: '+e.message;log('SW register FAILED: '+e.message)}
+});
+
+/* Raven adapter slot: NOT IMPLEMENTED. An adapter must provide
+   window.HQ_RAVEN = { load(onStatus):Promise, speak(text,onStatus):Promise }  */
+function ravenInit(){var R=window.HQ_RAVEN;if(!R||typeof R.load!=='function'||typeof R.speak!=='function')return;
+  $('rLoad').disabled=false;$('rGen').disabled=false;$('rMsg').textContent='Adapter registered. Tap Load Model.';var loaded=false;
+  $('rLoad').addEventListener('click',async function(){var t=performance.now();$('rMsg').textContent='Loading model...';log('Raven load start');
+    try{await R.load(function(s){$('rMsg').textContent=s});loaded=true;var s=((performance.now()-t)/1000).toFixed(1);$('rMsg').textContent='Model loaded in '+s+' s';log('Raven loaded '+s+' s')}
+    catch(e){$('rMsg').textContent='Load failed: '+(e&&e.message||e);log('Raven load FAILED: '+(e&&e.stack||e))}});
+  $('rGen').addEventListener('click',async function(){if(!loaded){$('rMsg').textContent='Load the model first.';return}var t=performance.now(),first=0;log('Raven speak start');
+    try{await R.speak($('txt').value,function(s){if(!first&&/play|first/i.test(s)){first=performance.now()-t}$('rMsg').textContent=s});$('rMsg').textContent='Done in '+((performance.now()-t)/1000).toFixed(1)+' s'+(first?'; first audio '+Math.round(first)+' ms':'');log($('rMsg').textContent)}
+    catch(e){$('rMsg').textContent='Speech failed: '+(e&&e.message||e);log('Raven speak FAILED: '+(e&&e.stack||e))}});
+}
+
+/* Apple fallback */
+var ss=window.speechSynthesis;
+function fillVoices(){var v=[];try{v=ss.getVoices().filter(function(x){return/^en/i.test(x.lang)})}catch(e){}var s=$('vsel');s.textContent='';
+  if(!v.length){var o=document.createElement('option');o.textContent='Default voice';o.value='';s.appendChild(o)}
+  v.forEach(function(x){var o=document.createElement('option');o.value=x.voiceURI||x.name;o.textContent=x.name+' ('+x.lang+')';s.appendChild(o)});log('Apple voices (English): '+v.length)}
+if(ss){fillVoices();if(ss.addEventListener)ss.addEventListener('voiceschanged',fillVoices);setTimeout(fillVoices,1000)}else{$('aMsg').textContent='speechSynthesis unavailable.';$('aGen').disabled=true}
+$('aGen').addEventListener('click',function(){var t=performance.now();ss.cancel();var u=new SpeechSynthesisUtterance($('txt').value);
+  var id=$('vsel').value,v=ss.getVoices().filter(function(x){return(x.voiceURI||x.name)===id})[0];if(v){u.voice=v;u.lang=v.lang}else u.lang='en-US';
+  u.onstart=function(){$('aMsg').textContent='Speaking (Apple voice). Started after '+Math.round(performance.now()-t)+' ms.';log($('aMsg').textContent)};
+  u.onend=function(){log('Apple speech finished')};u.onerror=function(e){$('aMsg').textContent='Speech error: '+(e.error||'unknown');log('Apple error '+e.error)};
+  ss.speak(u);setTimeout(function(){if(!/Speaking/.test($('aMsg').textContent))$('aMsg').textContent='No sound yet. Check the silent switch and volume.'},4000)});
+$('aStop').addEventListener('click',function(){if(ss)ss.cancel()});
+$('copy').addEventListener('click',function(){var t=lines.join('\n');if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(function(){log('Report copied')},function(){log('Copy blocked')})});
+check();ravenInit();
+})();
+</script></body></html>
