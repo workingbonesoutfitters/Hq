@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://*.supabase.co; img-src data:; base-uri 'none'; form-action 'none'">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Business HQ">
-<title>Business HQ · Gold Edition · Boardroom v3.6</title>
+<title>Business HQ · Gold Edition · Boardroom v3.7</title>
 <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=3">
 <style>
 :root{--bg:#f5f3ee;--card:#fff;--tx:#1d1d1b;--mu:#6b6a64;--ln:#e2dfd6;--ac:#c2410c;--ok:#15803d;--wa:#b45309;--bad:#b91c1c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -387,9 +387,9 @@ async function loadBoardroomCloud(){
   if(threads.length){
     const ids=threads.map(x=>x.id).filter(x=>/^[a-f0-9-]{36}$/i.test(x));
     if(ids.length){
-      const m=await call("/rest/v1/hq_boardroom_messages?select=id,thread_id,speaker,message,provider_model,created_at&thread_id=in.("+ids.join(",")+")&order=created_at.asc&limit=100");
+      const m=await call("/rest/v1/hq_boardroom_messages?select=id,thread_id,speaker,message,provider_model,created_at&thread_id=in.("+ids.join(",")+")&order=created_at.desc&limit=100");
       if(!m.ok)throw Error("Message read unavailable (HTTP "+m.status+")");
-      messages=Array.isArray(m.j)?m.j:[];
+      messages=Array.isArray(m.j)?m.j.slice().reverse():[];
     }
   }
   boardroomCloud={loaded:true,loading:false,error:b.ok?"":"Budget read unavailable",threads,messages,budget:b.ok&&Array.isArray(b.j)?b.j:[]};
@@ -534,6 +534,33 @@ function hqDictate(){
  r.onend=()=>{hqRecognizer=null;};
  try{r.start();hqVoiceState("Listening… Speak your message.");}catch(_){hqVoiceState("Microphone couldn't start. Try keyboard dictation.");}
 }
+// Last meeting card (v3.7): groups the newest Shortcut turns into one meeting and lists the tasks it created.
+function brLastMeeting(messages,tasks,apprs){
+ const sc=messages.filter(m=>m.provider_model==="ios_shortcut");
+ if(!sc.length)return null;
+ const turns=[sc[sc.length-1]];
+ for(let i=sc.length-2;i>=0;i--){if(new Date(turns[0].created_at)-new Date(sc[i].created_at)>15*60000)break;turns.unshift(sc[i]);}
+ const start=new Date(turns[0].created_at),end=new Date(turns[turns.length-1].created_at);
+ const tid=turns[0].thread_id;
+ const made=tasks.filter(t=>t.payload&&t.payload.source==="boardroom"&&t.payload.thread_id===tid&&new Date(t.created_at)>=new Date(start-60000)&&new Date(t.created_at)<=new Date(+end+24*3600000));
+ const close=[...turns].reverse().find(m=>m.speaker==="chatgpt");
+ const clean=x=>String(x||"").split(/\r?\n/).filter(l=>!/ACTION:/i.test(l)&&!/^\s*\|?[\s|:-]+\|?\s*$/.test(l)).join("\n").replace(/\n{3,}/g,"\n\n").trim();
+ const pend=new Set(apprs.map(a=>a.task_id));
+ return {start,turns,made,summary:clean(close&&close.message),pend};
+}
+function brLastMeetingCard(lm){
+ const who={chatgpt:"ChatGPT",claude:"Claude",grok:"Bob (Grok)"};
+ const st={queued:"To do",claimed:"Started",running:"In progress",awaiting_approval:"Needs your approval",approved:"Approved",executing:"Running",done:"Done",failed:"Failed",cancelled:"Cancelled",rejected:"Rejected"};
+ if(!lm)return `<div class="card"><div class="br-section-head"><h2>Last meeting</h2><span class="chip">From Siri Boardroom</span></div><p class="mutedline">No Boardroom meeting saved yet. Say "HQ Boardroom" to Siri to hold one.</p></div>`;
+ const when=lm.start.toLocaleString([], {weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
+ return `<div class="card"><div class="br-section-head"><h2>Last meeting</h2><span class="chip">${esc(when)}</span></div>
+ <p class="hint">${lm.turns.length} saved turn(s) · speaker names set by the Shortcut</p>
+ ${lm.summary?`<details class="br-message" open><summary><b>ChatGPT's wrap-up</b></summary><p>${esc(lm.summary)}</p></details>`:""}
+ <h3 style="margin:14px 0 4px">Decisions → tasks</h3>
+ ${lm.made.length?lm.made.map(t=>`<div class="br-recommend"><span class="br-spark">${t.status==="awaiting_approval"?"⚑":t.status==="done"?"✓":"✦"}</span><div><b>${esc(t.title)}</b><small>${esc(who[t.worker]||t.worker)} · ${esc(String(t.action||"").replace(/_/g," "))} · ${esc(st[t.status]||t.status)}</small></div></div>`).join(""):`<p class="mutedline">This meeting didn't create any tasks.</p>`}
+ ${lm.made.some(t=>t.status==="awaiting_approval")?`<button class="pri" data-a="tab|appr">Review approvals</button>`:""}
+ <p class="hint">Meetings only create tasks and approval requests. Nothing is posted, bought or published without your approval.</p></div>`;
+}
 function boardroom(){
  const a=D.apprs.filter(x=>x.business===biz),tasks=D.tasks.filter(x=>x.business===biz);
  const waiting=tasks.filter(x=>["queued","claimed","running","approved"].includes(x.status));
@@ -541,11 +568,12 @@ function boardroom(){
  const threads=boardroomCloud.threads.filter(x=>x.business===biz);
  const active=threads[0];
  const messages=active?boardroomCloud.messages.filter(x=>x.thread_id===active.id):[];
- const speech={owner:"You",chatgpt:"ChatGPT",claude:"Claude",grok:"Grok",system:"System"};
+ const speech={owner:"You",chatgpt:"ChatGPT",claude:"Claude",grok:"Bob (Grok)",system:"System"};
  const allowance=boardroomCloud.budget.reduce((t,b)=>t+(Number(b.allocation_cents)||0),0);
  const spent=boardroomCloud.budget.reduce((t,b)=>t+(Number(b.spent_cents)||0),0);
  return BIZ()+`<div class="hero"><div class="eyebrow">BUSINESS HQ · GOLD EDITION</div><h2>Executive Boardroom</h2><p>One place to hear the team's recommendations and join the discussion.</p><div class="gold-beam"></div></div>
  <div class="br-summary"><div><b>${a.length}</b><small>Need approval</small></div><div><b>${waiting.length}</b><small>In progress</small></div><div><b>${done.length}</b><small>Completed tasks</small></div></div>
+ ${brLastMeetingCard(brLastMeeting(boardroomCloud.messages.filter(m=>threads.some(t=>t.id===m.thread_id)),tasks,a))}
  <div class="card"><div class="br-section-head"><h2>🎙 HQ Voice Briefing</h2><span class="chip">Device speech · No AI charges</span></div>
  <p class="mutedline">Hear your latest loaded tasks, approvals, and available store reporting. This is a spoken data summary—not yet a live three-AI conversation.</p>
  <div class="br-controls"><button class="pri" data-a="brspeak|">▶ Hear my briefing</button><button data-a="brteamvoice|">Hear AI replies</button><button data-a="brstopvoice|">■ Stop voice</button></div>
@@ -564,7 +592,7 @@ function boardroom(){
  <div class="card"><div class="br-section-head"><h2>Executive group conversation</h2><span class="chip">Owner messages · Cloud saved</span></div>
  <div class="br-participants"><span>✧ ChatGPT</span><span>◇ Claude</span><span>✦ Grok</span><span>♛ You</span></div>
  ${boardroomCloud.error?`<p class="err">${esc(boardroomCloud.error)}</p>`:""}
- ${messages.length?messages.slice(-20).map(m=>`<div class="br-message"><b>${esc(speech[m.speaker]||m.speaker)}</b><p>${esc(m.message)}</p><small>${esc(m.provider_model||"")}</small></div>`).join(""):`<div class="br-empty">No live Boardroom messages yet. The provider connections are intentionally off.</div>`}
+ ${messages.length?messages.slice(-20).map(m=>`<div class="br-message"><b>${esc(speech[m.speaker]||m.speaker)}</b><p>${esc(m.message)}</p><small>${esc(m.provider_model||"")}</small></div>`).join(""):`<div class="br-empty">No Boardroom messages saved yet.</div>`}
  <label for="br_msg">Your message</label><textarea id="br_msg" rows="3" maxlength="4000" placeholder="Share an idea with your executive team...">${esc(boardroomText)}</textarea>
  <div class="br-controls"><button data-a="brdictate|">🎙 Dictate</button></div>
  <div class="br-controls"><button class="pri" data-a="brsend|" ${boardroomSending?"disabled":""}>${boardroomSending?"Saving…":"Send my message"}</button><button data-a="brrefresh|">Refresh conversation</button></div>
