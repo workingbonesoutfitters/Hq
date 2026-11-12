@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://*.supabase.co; img-src data:; base-uri 'none'; form-action 'none'">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Business HQ">
-<title>Business HQ · Gold Edition · Boardroom v3.9</title>
+<title>Business HQ · Gold Edition · Boardroom v4.0</title>
 <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=3">
 <style>
 :root{--bg:#f5f3ee;--card:#fff;--tx:#1d1d1b;--mu:#6b6a64;--ln:#e2dfd6;--ac:#c2410c;--ok:#15803d;--wa:#b45309;--bad:#b91c1c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -361,8 +361,9 @@ function ownerSnapshot(){
 function home(){
  const L=D.tasks.filter(t=>t.business==biz), A=D.apprs.filter(a=>a.business==biz);
  const done=L.filter(t=>t.status==="done").length,active=L.filter(t=>["queued","claimed","running","approved"].includes(t.status)).length;
- return BIZ()+`<div class="hero"><div class="eyebrow">THE EXECUTIVE SUITE</div><h2>${esc(BN[biz]||"Choose a business")}</h2><p>Everything important, in one place.</p></div><div class="statgrid">${stat("Tasks",L.length,"Total tracked")}${stat("Needs approval",A.length,"Waiting for you")}${stat("In progress",active,"Queued or active")}${stat("Completed",done,"Finished tasks")}</div>${ownerSnapshot()}${empireOverview()}<h2>Choose a department</h2><div class="quickgrid"><button class="quick" data-a="tab|manager"><div class="symbol">✧</div><strong>AI Manager</strong><span>Give instructions</span></button><button class="quick" data-a="tab|marketing"><div class="symbol">✦</div><strong>Marketing</strong><span>Create campaigns</span></button><button class="quick" data-a="tab|team"><div class="symbol">◇</div><strong>AI Team</strong><span>View departments</span></button><button class="quick" data-a="tab|appr"><div class="symbol">✓</div><strong>Approvals</strong><span>Review decisions</span></button></div><div class="card" style="margin-top:16px"><b><span class="statusdot"></span>Integration status</b><p class="mutedline">Fourthwall reporting is available to the signed-in owner; check Reports for its current status. Claude and Grok are manual handoffs, not connected services. No automatic AI work, publishing, spending or advertising is enabled. No background work runs when the page is closed.</p></div>`;
+ return BIZ()+`<div class="hero"><div class="eyebrow">THE EXECUTIVE SUITE</div><h2>${esc(BN[biz]||"Choose a business")}</h2><p>Everything important, in one place.</p></div><div class="statgrid">${stat("Tasks",L.length,"Total tracked")}${stat("Needs approval",A.length,"Waiting for you")}${stat("In progress",active,"Queued or active")}${stat("Completed",done,"Finished tasks")}</div>${pulseCard()}${ownerSnapshot()}${empireOverview()}<h2>Choose a department</h2><div class="quickgrid"><button class="quick" data-a="tab|manager"><div class="symbol">✧</div><strong>AI Manager</strong><span>Give instructions</span></button><button class="quick" data-a="tab|marketing"><div class="symbol">✦</div><strong>Marketing</strong><span>Create campaigns</span></button><button class="quick" data-a="tab|team"><div class="symbol">◇</div><strong>AI Team</strong><span>View departments</span></button><button class="quick" data-a="tab|appr"><div class="symbol">✓</div><strong>Approvals</strong><span>Review decisions</span></button></div><div class="card" style="margin-top:16px"><b><span class="statusdot"></span>Integration status</b><p class="mutedline">Fourthwall reporting is available to the signed-in owner; check Reports for its current status. Claude and Grok are manual handoffs, not connected services. No automatic AI work, publishing, spending or advertising is enabled. No background work runs when the page is closed.</p></div>`;
 }
+{const hqBaseLoad=load;let hqPulseAt=0;load=async function(){await hqBaseLoad();if(S&&unlocked&&!demo&&Date.now()-hqPulseAt>3e5){hqPulseAt=Date.now();loadPostStatus();loadOrderSnap()}}}
 // Boardroom preview: only read existing RLS-protected records. No paid AI calls.
 let boardroomCloud={loaded:false,loading:false,error:"",threads:[],messages:[],budget:[]};
 let boardroomText=LS.get("hq_boardroom_local_draft")||"";
@@ -624,10 +625,14 @@ async function loadPostStatus(){
  postStatus.loading=true;
  try{
   const since=new Date(Date.now()-7*864e5).toISOString();
-  const r=await call("/rest/v1/hq_post_status?select=network,scheduled_at,caption_preview,status,public_url,checked_at&business_id=eq."+encodeURIComponent(biz)+"&scheduled_at=gte."+encodeURIComponent(since)+"&order=scheduled_at.desc,network.asc&limit=30");
+  const r=await call("/rest/v1/hq_post_status?select=network,scheduled_at,caption_preview,status,public_url,checked_at,views,reach,likes,comments,link_clicks,metrics_at&business_id=eq."+encodeURIComponent(biz)+"&scheduled_at=gte."+encodeURIComponent(since)+"&order=scheduled_at.desc,network.asc&limit=30");
   postStatus=r.ok&&Array.isArray(r.j)?{loaded:true,loading:false,error:"",rows:r.j}:{loaded:true,loading:false,error:"Post status unavailable (HTTP "+r.status+")",rows:[]};
  }catch(e){postStatus={loaded:true,loading:false,error:"Could not reach post status",rows:[]}}
- if(tab==="marketing")render();
+ if(tab==="marketing"||tab==="home")render();
+}
+function postNumbers(n){
+ const f=[["views","views"],["reach","reached"],["likes","likes"],["comments","comments"],["link_clicks","link clicks"]].filter(([k])=>Number.isFinite(n[k]));
+ return f.length?f.map(([k,l])=>`${n[k]} ${l}`).join(" · "):"";
 }
 function postStatusPanel(){
  const P={published:["Published","g"],scheduled:["Scheduled",""],missed:["Missed","r"],error:["Error","r"],unknown:["Unknown","w"]};
@@ -635,8 +640,35 @@ function postStatusPanel(){
  const when=d=>{try{return new Date(d).toLocaleString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}catch(e){return ""}};
  const groups=[];postStatus.rows.forEach(r=>{const k=r.scheduled_at+"|"+(r.caption_preview||"");let g=groups.find(x=>x.k===k);if(!g){g={k,at:r.scheduled_at,cap:r.caption_preview||"Post",nets:[]};groups.push(g)}g.nets.push(r)});
  const checked=postStatus.rows.reduce((m,r)=>r.checked_at>m?r.checked_at:m,"");
- const body=!postStatus.loaded?`<p class="mutedline">Loading post status…</p>`:postStatus.error?`<p class="err">${esc(postStatus.error)}</p>`:!groups.length?`<p class="mutedline">No posts tracked for ${esc(BN[biz])} in the last 7 days.</p>`:groups.map(g=>`<div class="card" style="margin:10px 0"><b>${esc(g.cap)}</b><p class="hint">${esc(when(g.at))} Eastern</p><div>${g.nets.map(n=>{const s=P[n.status]||P.unknown,ok=n.status==="published"&&POST_URL_OK.test(n.public_url||"");return `<div style="margin-top:6px">${chip(NET[n.network]||n.network,"")}${chip(s[0],s[1])}${ok?` <a href="${esc(n.public_url)}" target="_blank" rel="noopener noreferrer">View post</a>`:""}</div>`}).join("")}</div></div>`).join("");
- return `<div class="card"><div class="eyebrow">VERIFIED · READ-ONLY</div><h2 style="margin-top:4px">Did it post?</h2><p class="mutedline">Live status from Metricool, checked nightly at 6:20 p.m. Eastern. This view only reads; it cannot post or change anything.</p>${body}<div class="actionrow"><button data-a="postrefresh|">Refresh</button></div>${checked?`<p class="hint">Last checked ${esc(when(checked))} Eastern</p>`:""}</div>`;
+ const body=!postStatus.loaded?`<p class="mutedline">Loading post status…</p>`:postStatus.error?`<p class="err">${esc(postStatus.error)}</p>`:!groups.length?`<p class="mutedline">No posts tracked for ${esc(BN[biz])} in the last 7 days.</p>`:groups.map(g=>`<div class="card" style="margin:10px 0"><b>${esc(g.cap)}</b><p class="hint">${esc(when(g.at))} Eastern</p><div>${g.nets.map(n=>{const s=P[n.status]||P.unknown,ok=n.status==="published"&&POST_URL_OK.test(n.public_url||"");return `<div style="margin-top:6px">${chip(NET[n.network]||n.network,"")}${chip(s[0],s[1])}${ok?` <a href="${esc(n.public_url)}" target="_blank" rel="noopener noreferrer">View post</a>`:""}${n.status==="published"?`<div class="hint">${esc(postNumbers(n)||"Numbers not reported yet")}</div>`:""}</div>`}).join("")}</div></div>`).join("");
+ return `<div class="card"><div class="eyebrow">VERIFIED · READ-ONLY</div><h2 style="margin-top:4px">Did it post?</h2><p class="mutedline">Live status and results from Metricool, checked nightly at 6:20 p.m. Eastern. This view only reads; it cannot post or change anything.</p>${body}<div class="actionrow"><button data-a="postrefresh|">Refresh</button></div>${checked?`<p class="hint">Last checked ${esc(when(checked))} Eastern</p>`:""}</div>`;
+}
+// HQ Pulse (v4.0): one glance on Home. Latest post result + store orders read
+// directly from Fourthwall (hq_order_snapshots). Read-only.
+let orderSnap={loaded:false,loading:false,error:"",row:null};
+async function loadOrderSnap(){
+ if(!S||!unlocked||demo||orderSnap.loading)return;
+ orderSnap.loading=true;
+ try{
+  const r=await call("/rest/v1/hq_order_snapshots?select=checked_at,ok,order_count,orders_last_7_days,newest_order_at,error&business_id=eq.wb&order=checked_at.desc&limit=1");
+  orderSnap=r.ok&&Array.isArray(r.j)?{loaded:true,loading:false,error:"",row:r.j[0]||null}:{loaded:true,loading:false,error:"Order check unavailable",row:null};
+ }catch(e){orderSnap={loaded:true,loading:false,error:"Could not reach order check",row:null}}
+ if(tab==="home")render();
+}
+function pulseCard(){
+ const when=d=>{try{return new Date(d).toLocaleString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}catch(e){return ""}};
+ const pub=postStatus.rows.filter(r=>r.status==="published");
+ const bad=postStatus.rows.filter(r=>r.status==="missed"||r.status==="error");
+ let post;
+ if(!postStatus.loaded)post="Checking…";
+ else if(postStatus.error)post=postStatus.error;
+ else if(bad.length)post=`⚠ ${bad.length} post${bad.length>1?"s":""} did not go out. See Marketing.`;
+ else if(pub.length){const last=pub[0],same=pub.filter(r=>r.scheduled_at===last.scheduled_at),nets=same.map(r=>({facebook:"Facebook",instagram:"Instagram",tiktok:"TikTok"})[r.network]||r.network).join(" & "),views=same.reduce((n,r)=>n+(Number.isFinite(r.views)?r.views:0),0),known=same.some(r=>Number.isFinite(r.views));post=`${esc(last.caption_preview||"Post")} — live on ${esc(nets)}${known?` · ${views} views`:""}`}
+ else post="No posts went out in the last 7 days.";
+ let orders="";
+ if(biz==="wb"){const o=orderSnap.row;
+  orders=!orderSnap.loaded?"Checking…":orderSnap.error?esc(orderSnap.error):!o?"Order check hasn't run yet.":!o.ok?`⚠ Last order check failed (${esc(when(o.checked_at))}).`:(Date.now()-Date.parse(o.checked_at)>36*36e5)?`⚠ Order check is out of date (last ${esc(when(o.checked_at))}).`:`${o.order_count} order${o.order_count===1?"":"s"} total${Number.isFinite(o.orders_last_7_days)?` · ${o.orders_last_7_days} this week`:""}${o.newest_order_at?` · newest ${esc(when(o.newest_order_at))}`:""}`;}
+ return `<div class="card"><div class="eyebrow">HQ PULSE · VERIFIED</div><p style="margin:8px 0 4px"><b>Last post:</b> ${post}</p>${biz==="wb"?`<p style="margin:4px 0"><b>Store orders:</b> ${orders}</p><p class="hint">Orders read directly from Fourthwall three times a day. Counts only.</p>`:""}<div class="actionrow"><button data-a="tab|marketing">Post details</button></div></div>`;
 }
 function marketing(isDemo=false){
  const b=CAMPAIGNS[biz]||CAMPAIGNS.wb;
@@ -1050,7 +1082,7 @@ if(a=="savebudget"){const b={};for(const k of ["ads","tools","operations","other
  }
  else if(a=="savedraft"){draftText=$("#m_output")?.value||"";LS.set("hq_marketing_draft_"+biz,draftText);draftMessage="Saved in this browser only."}
  else if(a=="loaddraft"){draftText=LS.get("hq_marketing_draft_"+biz)||"";draftMessage=draftText?"Saved draft loaded.":"No saved draft for this business."}
- else if(a=="postrefresh"){postStatus.loaded=false;render();await loadPostStatus()}else if(a=="tab"){tab=x;if(x==="team"&&!demo&&S&&unlocked){await loadAiCloud()} if(x==="boardroom"&&!demo&&S&&unlocked){await loadBoardroomCloud()} if(x==="marketing"&&!demo&&S&&unlocked){await loadPostStatus()} if(x==="reports"&&!demo&&S&&unlocked&&biz==="wb")await checkFourthwallApi()}else if(a=="biz"){biz=x;aiEditId=null;aiCloud={loaded:false,error:"",items:[],busy:false};if(tab==="team"&&!demo&&S&&unlocked){await loadAiCloud()} if(tab==="boardroom"&&!demo&&S&&unlocked){boardroomCloud={loaded:false,loading:false,error:"",threads:[],messages:[],budget:[]};await loadBoardroomCloud()} if(tab==="marketing"&&!demo&&S&&unlocked){postStatus={loaded:false,loading:false,error:"",rows:[]};await loadPostStatus()} if(tab==="reports"&&x==="wb"&&!demo&&S&&unlocked)await checkFourthwallApi()}else if(a=="form"){form=!form}
+ else if(a=="postrefresh"){postStatus.loaded=false;render();await loadPostStatus()}else if(a=="tab"){tab=x;if(x==="team"&&!demo&&S&&unlocked){await loadAiCloud()} if(x==="boardroom"&&!demo&&S&&unlocked){await loadBoardroomCloud()} if(x==="marketing"&&!demo&&S&&unlocked){await loadPostStatus()} if(x==="reports"&&!demo&&S&&unlocked&&biz==="wb")await checkFourthwallApi()}else if(a=="biz"){biz=x;aiEditId=null;aiCloud={loaded:false,error:"",items:[],busy:false};if(tab==="team"&&!demo&&S&&unlocked){await loadAiCloud()} if(tab==="boardroom"&&!demo&&S&&unlocked){boardroomCloud={loaded:false,loading:false,error:"",threads:[],messages:[],budget:[]};await loadBoardroomCloud()} if((tab==="marketing"||tab==="home")&&!demo&&S&&unlocked){postStatus={loaded:false,loading:false,error:"",rows:[]};await loadPostStatus()} if(tab==="reports"&&x==="wb"&&!demo&&S&&unlocked)await checkFourthwallApi()}else if(a=="form"){form=!form}
 else if(a=="cfg"){const u=$("#u").value.trim().replace(/\/$/,""),k=$("#k").value.trim();if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(u)){msg="Project URL should look like https://abcd.supabase.co";return render(msg)}const b=badKey(k);if(b){msg=b;K="";return render()}U=u;K=k;LS.set("hq_url",U);LS.set("hq_key",K)}
 else if(a=="login"){const em=$("#em").value.trim(),pw=$("#pw").value;const r=await call("/auth/v1/token?grant_type=password",{method:"POST",body:{email:em,password:pw},anon:true});if(!r.ok){msg="Sign-in failed: "+err(r)}else{S={at:r.j.access_token,rt:r.j.refresh_token,em};LS.set("hq_sess",JSON.stringify(S));unlocked=true;await load()}}
 else if(a=="logout"||a=="signout"){aiEditId=null;unlocked=false;S=null;LS.del("hq_sess");D={tasks:[],apprs:[],rules:[],req:[],mem:[]};fourthwallReport={loaded:false,ok:false,row:null,error:""};fourthwallApiTest={state:"idle",message:"Not checked yet.",count:null,statuses:null};fourthwallLastCheck=0}
