@@ -393,9 +393,9 @@ const overArc = (T, p, extra = 0.6) => {
 
 // ================= trays + trash =================
 const trays = [];
-function makeTray(kind, ang) {
-  const [x, z] = polar(0.8, ang);
-  const g = new THREE.Group(); g.position.set(x, DESK.y, z); g.rotation.y = faceCenter(x, z); scene.add(g);
+// A Completed (approve) or Revised box. On the desk by default; stations pass their own group + local spot.
+function makeTray(kind, parent = scene, x = 0, y = DESK.y, z = 0) {
+  const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = faceCenter(x, z); parent.add(g);
   const W = 0.34, D = 0.27, H = 0.075, T = 0.008;
   box(W, T, D, MAT.leather, 0, T / 2, 0, g);
   box(W, H, T, MAT.leather, 0, H / 2, -D / 2, g); box(W, H, T, MAT.leather, 0, H / 2, D / 2, g);
@@ -420,6 +420,16 @@ function makeTray(kind, ang) {
     spot() { return g.localToWorld(new THREE.Vector3((Math.random() - 0.5) * 0.04, 0.014 + this.count * 0.003, (Math.random() - 0.5) * 0.03)); } };
   zone.userData.target.ref = t;
   trays.push(t); return t;
+}
+const deskTray = (kind, ang) => { const [x, z] = polar(0.8, ang); return makeTray(kind, scene, x, DESK.y, z); };
+// Small leather side table with a box on top, so every station has its own Completed / Revised boxes.
+function stationTray(kind, parent, x, z) {
+  const t = new THREE.Group(); t.position.set(x, 0, z); t.rotation.y = faceCenter(x, z); parent.add(t);
+  box(0.44, 0.03, 0.36, MAT.leather, 0, 0.85, 0, t);
+  box(0.452, 0.008, 0.372, MAT.gold, 0, 0.835, 0, t);
+  const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 0.84, 14), MAT.gold); leg.position.y = 0.42; t.add(leg);
+  const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.19, 0.025, 28), MAT.leather); foot.position.y = 0.0125; t.add(foot);
+  return makeTray(kind, parent, x, 0.865, z);
 }
 const trash = { x: 1.5, z: 0.2, top: 0.5, r: 0.19, swish: 0, items: [], flash: 0 };
 let trashLabel;
@@ -501,6 +511,23 @@ function freeDeskSlot() {
   for (let i = 0; i < DESK_SLOTS.length; i++) { const k = (3 + (i % 2 ? -1 : 1) * Math.ceil(i / 2)); if (k >= 0 && k < DESK_SLOTS.length && !used.has(k)) return k; }
   return null;
 }
+// Laser / Etsy files waiting for your review live on the shelf beside the Laser Bench, not on the desk.
+const isEtsyLaser = (row) => /\.svg$/i.test(row.file_name || '') || /\b(etsy|laser)\b/i.test(row.goal || '');
+const SHELF_SLOTS = 9;   // 3 shelves × 3 papers
+const etsyShelf = { g: null, label: null };
+function drawShelfLabel(c, w, h) {
+  if (!c) { if (etsyShelf.label) repaint(etsyShelf.label.userData.tex, drawShelfLabel); return; }
+  panelBg(c, w, h, { radius: 0.18 });
+  c.textAlign = 'center'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.34}px ${SERIF}`; c.fillText('ETSY · WAITING FOR REVIEW', w / 2, h * 0.45);
+  c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.2}px ${SANS}`;
+  const n = docs.filter((d) => d.userData.shelfSlot != null && !d.userData.doc.state).length;
+  c.fillText(!live.ok ? 'Sign this headset in to load your laser files' : n ? `${n} file${n === 1 ? '' : 's'} · grab one, drop it in Completed or Revised` : 'Nothing waiting · laser/Etsy files from the team land here', w / 2, h * 0.8);
+}
+function freeShelfSlot() {
+  const used = new Set(docs.filter((d) => d.userData.shelfSlot != null).map((d) => d.userData.shelfSlot));
+  for (let k = 0; k < SHELF_SLOTS; k++) if (!used.has(k)) return k;
+  return null;
+}
 function homeFor(g) {
   const to = g.userData.doc.row.next_recipient, u = g.userData;
   const name = WHO[to];
@@ -508,10 +535,19 @@ function homeFor(g) {
     const D = crew.find((x) => x.spec.name === name);
     const n = docs.filter((d) => d !== g && d.userData.atDirector === name).length;
     const [x, z] = polar(BOARD_T.r1 - 0.13, D.spec.ang + (n - 0.5) * 0.09);
-    u.slot = null; u.atDirector = name;
+    u.slot = u.shelfSlot = null; u.atDirector = name;
     return { p: new THREE.Vector3(x, BOARD_T.y + 0.005 + n * 0.0006, z), q: new THREE.Quaternion().setFromEuler(new THREE.Euler(-PI / 2, 0, -D.spec.ang)) };
   }
   u.atDirector = null;
+  if (etsyShelf.g && isEtsyLaser(u.doc.row)) {
+    u.slot = null;
+    if (u.shelfSlot == null) u.shelfSlot = freeShelfSlot();
+    const k = u.shelfSlot ?? SHELF_SLOTS - 1, extra = u.shelfSlot == null ? 0.004 : 0;
+    const lp = new THREE.Vector3(-0.26 + (k % 3) * 0.26, 1.42 - Math.floor(k / 3) * 0.4 + 0.145, 0.02 + extra);
+    etsyShelf.g.updateMatrixWorld(true);
+    return { p: etsyShelf.g.localToWorld(lp), q: etsyShelf.g.getWorldQuaternion(new THREE.Quaternion()).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.18, 0, 0))) };
+  }
+  u.shelfSlot = null;
   if (u.slot == null) u.slot = freeDeskSlot();
   const a = DESK_SLOTS[u.slot ?? 3], [x, z] = polar(0.78, a);
   return { p: new THREE.Vector3(x, DESK.y + 0.004 + (u.slot ?? 3) * 0.0006, z), q: new THREE.Quaternion().setFromEuler(new THREE.Euler(-PI / 2, 0, -a * 0.9)) };
@@ -909,6 +945,7 @@ function setCrumpled(obj, on) {
 }
 function goHome(obj) {
   const u = obj.userData; setCrumpled(obj, false); obj.visible = true; obj.scale.setScalar(1); u.fly = u.glide = null;
+  if (u.kind === 'proof' && (u.decided || (apparel.proof && apparel.proof !== obj))) { removeProof(obj); return; }
   if (u.home.board) { board.attach(obj); obj.position.set(u.home.x, u.home.y, 0.012); obj.rotation.set(0, 0, 0); }
   else { scene.attach(obj); obj.position.copy(u.home.p); obj.quaternion.copy(u.home.q); }
 }
@@ -919,9 +956,15 @@ function clearState(obj) {
 const snapshot = (row) => ({ decision: row.decision ?? null, status: row.status, next_recipient: row.next_recipient ?? null, decided_at: row.decided_at ?? null, decision_note: row.decision_note ?? null });
 // Final landing spots ------------------------------------------------
 function intoTray(obj, t) {
+  if (obj.userData.kind === 'proof') {
+    if (obj.userData.decided) { goHome(obj); return; }
+    setCrumpled(obj, false); obj.scale.setScalar(0.62);   // folded into the box
+    layFlatAt(obj, t.spot(), 0); obj.quaternion.copy(t.g.getWorldQuaternion(new THREE.Quaternion())).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-PI / 2, 0, 0)));
+    t.count++; t.flash = 1.2; decideProof(obj, t); return;
+  }
   if (obj.userData.kind !== 'doc') { goHome(obj); return; }
   setCrumpled(obj, false); obj.scale.setScalar(1);
-  layFlatAt(obj, t.spot(), 0); obj.quaternion.copy(t.g.quaternion).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-PI / 2, 0, (Math.random() - 0.5) * 0.1)));
+  layFlatAt(obj, t.spot(), 0); obj.quaternion.copy(t.g.getWorldQuaternion(new THREE.Quaternion())).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-PI / 2, 0, (Math.random() - 0.5) * 0.1)));
   t.count++; t.flash = 1.2; setDocState(obj, t.kind);
   const row = obj.userData.doc.row, prev = snapshot(row), title = obj.userData.doc.title, now = new Date().toISOString();
   lastAction = { obj, prev };
@@ -935,6 +978,7 @@ function intoTray(obj, t) {
   }
 }
 function toDirector(obj, D) {
+  if (obj.userData.kind === 'proof') { goHome(obj); showToast('Shirts go in a box', 'Drop it in Completed to approve or Revised to send it back.', false); return; }
   setCrumpled(obj, false); obj.scale.setScalar(1); D.nod = 1;
   const code = CODE_OF[D.spec.name];
   if (obj.userData.kind === 'doc') {
@@ -951,6 +995,7 @@ function toDirector(obj, D) {
   }
 }
 function intoTrash(obj) {
+  if (obj.userData.kind === 'proof') { trash.swish++; trash.flash = 1.5; repaint(trashLabel.userData.tex, drawTrashLabel); const d = obj.userData.decided; removeProof(obj); if (!d) refreshProof(); showToast('Swish!', 'Shirt mockup tossed — nothing saved.', false); return; }
   setCrumpled(obj, true); obj.visible = false; obj.userData.fly = null;
   trash.items.push(obj); trash.swish++; trash.flash = 1.5; repaint(trashLabel.userData.tex, drawTrashLabel);
   const isDoc = obj.userData.kind === 'doc';
@@ -967,6 +1012,11 @@ function restoreTrash() {
 }
 function undoLast() {
   const a = lastAction; lastAction = null; hideToast(); if (!a) return;
+  if (a.proofRow !== undefined) {
+    if (a.proofRow) { if (pendingNote && pendingNote.id === a.proofRow) pendingNote = null; rest(`/rest/v1/hq_ai_handoffs?id=eq.${a.proofRow}`, { method: 'DELETE', prefer: 'return=minimal' }).then(() => refreshCounts().then(drawAll)).catch(() => showToast("Couldn't undo", 'Check the connection.', false)); }
+    const t = trays.find((x) => x.contains(a.obj.getWorldPosition(V()))); if (t) t.count = Math.max(0, t.count - 1);
+    removeProof(a.obj); if (apparel.proof) removeProof(apparel.proof); refreshProof(); return;
+  }
   if (a.trash) { const i = trash.items.indexOf(a.obj); if (i >= 0) trash.items.splice(i, 1); }
   if (a.prev) { if (pendingNote && pendingNote.id === a.obj.userData.doc.row.id) pendingNote = null; saveHandoff(a.obj, a.prev); a.obj.userData.doc.to = WHO[a.prev.next_recipient] || 'Michael'; a.obj.userData.home = homeFor(a.obj); }
   if (a.note) saveNote(a.obj, a.note);
@@ -1010,6 +1060,11 @@ function place(obj, vel) {
   const p = obj.getWorldPosition(V()), u = obj.userData;
   if (u.kind === 'design') { if (apparel.proxy.getWorldPosition(V()).distanceTo(p) < 0.5) applyDesign(obj); return goHome(obj); }
   if (vel && vel.length() > 1.2) { scene.attach(obj); u.fly = { vel: vel.clone().multiplyScalar(1.1), spin: (Math.random() - 0.5) * 8 }; return; }
+  if (u.kind === 'proof') {
+    for (const t of trays) if (t.contains(p)) return intoTray(obj, t);
+    if (Math.hypot(p.x - trash.x, p.z - trash.z) < trash.r && p.y < trash.top + 0.3) return intoTrash(obj);
+    return goHome(obj);
+  }
   if (u.kind === 'doc' || u.kind === 'note') {
     for (const t of trays) if (t.contains(p)) return intoTray(obj, t);
     for (const D of crew) if (D.proxy.getWorldPosition(V()).distanceTo(p) < 0.45) return toDirector(obj, D);
@@ -1044,6 +1099,7 @@ function stepFlight(obj, dt) {
   if (u.kind === 'note' && !u.crumpled) { const lp = board.worldToLocal(p.clone()); if (Math.abs(lp.z) < 0.06 && Math.abs(lp.x) < 1.62 && Math.abs(lp.y) < 0.98) { u.fly = null; return stickToBoard(obj, p); } }
   if (p.y <= r) {
     p.y = r;
+    if (u.kind === 'proof') { u.fly = null; return goHome(obj); }
     if (!u.crumpled) { u.fly = null; obj.rotation.set(-PI / 2, 0, Math.random() * PI); return; }
     f.vel.y = Math.abs(f.vel.y) * 0.35; f.vel.x *= 0.75; f.vel.z *= 0.75;
     if (f.vel.length() < 0.15) u.fly = null;
@@ -1104,6 +1160,16 @@ function buildApparel(g) {
    ['Clear', () => { apparel.current = null; updateDecal(); drawShirtLabel(); }]].forEach(([label, fn], i) => {
     const b = makeButton(0.115, 0.06, label, fn); b.position.set(-0.24 + i * 0.12, -0.17, 0); b.scale.setScalar(1); tilt.add(b);
   });
+  // hanger stand: your configured shirt hangs here, ready to pick up
+  const hx = -0.3, hz = -0.8;
+  const stand = new THREE.Group(); stand.position.set(hx, 0, hz); stand.rotation.y = faceCenter(hx, hz); g.add(stand);
+  const sPole = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 1.5, 12), MAT.gold); sPole.position.y = 0.75; stand.add(sPole);
+  const sFoot = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.17, 0.02, 28), MAT.leather); sFoot.position.y = 0.01; stand.add(sFoot);
+  box(0.3, 0.012, 0.012, MAT.gold, 0, 1.47, 0.03, stand);
+  const tag = labelPlane(0.34, 0.07, (c, w, h) => { panelBg(c, w, h, { radius: 0.25 }); c.textAlign = 'center'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.42}px ${SANS}`; c.fillText('Pick up the shirt → drop in a box', w / 2, h * 0.64); }, { px: 2400 });
+  tag.position.set(0, 1.58, 0.03); stand.add(tag);
+  stand.updateMatrixWorld(true);
+  proofHome = { p: stand.localToWorld(new THREE.Vector3(0, 1.47 - PROOF_H / 2 + 0.02, 0.05)), q: stand.getWorldQuaternion(new THREE.Quaternion()) };
   drawBinder();
 }
 function makeSwatch(name, hex) {
@@ -1135,7 +1201,7 @@ function drawBinder(c, w, h) {
   c.textAlign = 'center'; c.fillStyle = '#8f887a'; c.font = `500 ${h * 0.035}px ${SANS}`; c.fillText('Grab a design · drop it on the shirt · grab the shirt to spin it', w / 2, h * 0.97);
 }
 function drawShirtLabel(c, w, h) {
-  if (!c) { if (shirtLabel) repaint(shirtLabel.userData.tex, drawShirtLabel); return; }
+  if (!c) { if (shirtLabel) repaint(shirtLabel.userData.tex, drawShirtLabel); refreshProof(); return; }
   panelBg(c, w, h, { radius: 0.2 });
   c.textAlign = 'left'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.32}px ${SERIF}`;
   c.fillText(apparel.current ? apparel.current.label.slice(0, 30) : 'Shirt preview', w * 0.04, h * 0.45);
@@ -1156,6 +1222,83 @@ function updateDecal() {
 function applyDesign(card) {
   apparel.current = card.userData.design; updateDecal(); drawShirtLabel();
   showToast(`On the shirt: ${apparel.current.label}`, `${apparel.colorName} tee · ${apparel.side} print. Try other colours with the swatches.`, false);
+}
+// ---- Shirt proof: the configured shirt (design in place) you can pick up and drop in Completed / Revised ----
+const PROOF_W = 0.46, PROOF_H = 0.5;   // ~ two-thirds scale tee, sized so it reads clearly in your hand
+function teePath(c, w, h) {
+  c.beginPath();
+  c.moveTo(w * 0.38, h * 0.04); c.quadraticCurveTo(w * 0.5, h * 0.12, w * 0.62, h * 0.04);   // collar
+  c.lineTo(w * 0.8, h * 0.1); c.lineTo(w * 0.98, h * 0.3); c.lineTo(w * 0.86, h * 0.38); c.lineTo(w * 0.77, h * 0.3);   // right sleeve
+  c.lineTo(w * 0.77, h * 0.97); c.lineTo(w * 0.23, h * 0.97); c.lineTo(w * 0.23, h * 0.3);
+  c.lineTo(w * 0.14, h * 0.38); c.lineTo(w * 0.02, h * 0.3); c.lineTo(w * 0.2, h * 0.1); c.closePath();   // left sleeve
+}
+function proofConfig() {
+  const d = apparel.current; if (!d) return null;
+  return { design: d, name: d.name, label: d.label, color: apparel.color, colorName: apparel.colorName, side: apparel.side, size: apparel.size };
+}
+function drawProof(cfg) {
+  return (c, w, h) => {
+    c.clearRect(0, 0, w, h);
+    teePath(c, w, h); c.fillStyle = cfg.color; c.fill();
+    c.lineWidth = w * 0.006; c.strokeStyle = 'rgba(201,162,74,0.9)'; c.stroke();
+    c.save(); teePath(c, w, h); c.clip();
+    // print: real height relative to the tee (body ≈ 54% of this sheet ≈ a 50 cm wide adult tee)
+    const pxPerM = (w * 0.54) / 0.5, ph = cfg.size * pxPerM, pw = ph * cfg.design.aspect;
+    const s = Math.min(1, (w * 0.5) / pw), dw = pw * s, dh = ph * s;
+    c.drawImage(cfg.design.cv, (w - dw) / 2, h * 0.2, dw, dh);
+    c.restore();
+    c.textAlign = 'center'; c.font = `700 ${h * 0.03}px ${SANS}`;
+    c.fillStyle = cfg.colorName === 'White' || cfg.colorName === 'Sand' || cfg.colorName === 'Heather' ? '#3a342a' : '#e8dfc8';
+    c.fillText(`${cfg.side.toUpperCase()} · ${cfg.colorName.toUpperCase()} · ${Math.round(cfg.size * 100)} CM PRINT`, w / 2, h * 0.93);
+  };
+}
+let proofHome = null;
+function makeProof() {
+  const cfg = proofConfig(); if (!cfg) return null;
+  const g = new THREE.Group(); g.userData = { kind: 'proof', cfg };
+  const paper = labelPlane(PROOF_W, PROOF_H, drawProof(cfg), { px: 2000, transparent: true, side: THREE.DoubleSide });
+  paper.material.alphaTest = 0.4; g.add(paper); g.userData.paper = paper;
+  equipSheet(g, PROOF_W, PROOF_H, apparel.mat);
+  register(paper, 'proof', g); scene.add(g);
+  apparel.proof = g; g.userData.home = proofHome; goHome(g);
+  return g;
+}
+// Keep the shirt on the hanger matching what's on the mannequin.
+function refreshProof() {
+  const g = apparel.proof, cfg = proofConfig();
+  if (!g) { if (cfg && proofHome) makeProof(); return; }
+  if (g.userData.heldBy || g.userData.fly || g.userData.glide) return;
+  if (!cfg) { removeProof(g); return; }
+  g.userData.cfg = cfg; repaint(g.userData.paper.userData.tex, drawProof(cfg));
+}
+function removeProof(g) {
+  for (let i = hitables.length - 1; i >= 0; i--) if (hitables[i].userData.owner === g) hitables.splice(i, 1);
+  if (g.parent) g.parent.remove(g);
+  if (apparel.proof === g) apparel.proof = null;
+}
+// Approve / send back a shirt: saved to Business HQ as a decided handoff with the exact setup.
+async function decideProof(obj, t) {
+  const cfg = obj.userData.cfg, approve = t.kind === 'approve', now = new Date().toISOString();
+  const title = `Shirt mockup: ${cfg.label} on ${cfg.colorName} tee (${cfg.side})`;
+  if (apparel.proof === obj) { apparel.proof = null; refreshProof(); }   // a fresh shirt goes back on the hanger
+  obj.userData.decided = true;
+  const body = {
+    business: 'wb', worker: 'claude', goal: title,
+    result: `Set up by Michael in the VR Apparel Corner. Design file: ${cfg.name}. Shirt colour: ${cfg.colorName} (${cfg.color}). ${cfg.side === 'front' ? 'Front' : 'Back'} print, about ${Math.round(cfg.size * 100)} cm tall. ${approve ? 'Approves this mockup only — nothing is published, listed or ordered.' : 'Sent back for revision.'}`,
+    status: approve ? 'reviewed' : 'draft', file_name: cfg.name.slice(0, 200), file_path: `wb/designs/${cfg.name}`.slice(0, 300),
+    decision: approve ? 'approved' : 'revise', decided_at: now,
+  };
+  try {
+    const rows = await rest('/rest/v1/hq_ai_handoffs', { method: 'POST', body, prefer: 'return=representation' });
+    const row = rows && rows[0]; obj.userData.rowId = row && row.id;
+    lastAction = { obj, proofRow: obj.userData.rowId };
+    if (approve) showToast(`Approved: ${cfg.label} shirt`, 'Saved to Business HQ. Approves the mockup only — nothing is published.');
+    else { pendingNote = { id: row.id, since: now, title }; showToast(`Sent back: ${cfg.label} shirt`, 'Say why in the boardroom — your next sentence is saved as the note.'); }
+    refreshCounts().then(drawAll).catch(() => {});
+  } catch (e) {
+    t.count = Math.max(0, t.count - 1); removeProof(obj); refreshProof();
+    showToast("Couldn't save to Business HQ", live.ok ? 'Check the connection and try again.' : 'Sign this headset in first, then try again.', false);
+  }
 }
 function layoutCards() {
   apparel.page = Math.min(apparel.page, pageCount() - 1);
@@ -1252,6 +1395,22 @@ function buildStations() {
     }, { px: 2400, transparent: false });
     decal(sheet.material); sheet.rotation.x = -PI / 2; sheet.position.set(0, 0.926, -1.2); g.add(sheet);
     infoCard(g, 0.9, 0.36, 'Laser Bench', ['Real-size preview of your vector files: upload SVG or PNG files to Business HQ to fill this bench.', 'Sheet shown at about 432 × 406 mm, the xTool D1 Pro work area.'], 0, 1.45, -1.55, -0.15);
+    // Completed / Revised boxes right on the bench, either side of the sheet
+    makeTray('revise', g, -0.53, 0.925, -1.06);
+    makeTray('approve', g, 0.53, 0.925, -1.06);
+    // Etsy shelf: laser files waiting for your review
+    const sx = 1.3, sz = -0.95;
+    const sh = new THREE.Group(); sh.position.set(sx, 0, sz); sh.rotation.y = faceCenter(sx, sz); g.add(sh); etsyShelf.g = sh;
+    for (const x of [-0.42, 0.42]) box(0.03, 1.72, 0.24, MAT.leather, x, 0.86, -0.02, sh);
+    box(0.87, 1.72, 0.015, MAT.leather, 0, 0.86, -0.135, sh);
+    for (const y of [0.62, 1.02, 1.42]) {
+      box(0.84, 0.025, 0.24, MAT.leather, 0, y, -0.02, sh);
+      box(0.84, 0.008, 0.012, MAT.gold, 0, y + 0.016, 0.1, sh);
+      box(0.84, 0.03, 0.012, MAT.leather, 0, y + 0.028, 0.095, sh);   // lip so papers don't slide off
+    }
+    box(0.9, 0.02, 0.26, MAT.gold, 0, 1.73, -0.02, sh);
+    etsyShelf.label = labelPlane(0.84, 0.17, drawShelfLabel, { px: 2000 });
+    etsyShelf.label.position.set(0, 1.86, 0); sh.add(etsyShelf.label);
   }
   // Book stand (pages now face you)
   {
@@ -1269,9 +1428,11 @@ function buildStations() {
     const Lp = page(true), Rp = page(false);
     for (const [pg, x, ry] of [[Lp, -0.125, 0.04], [Rp, 0.125, -0.04]]) { decal(pg.material); pg.rotation.set(-PI / 2, ry, 0); pg.position.set(x, 0.012, 0); top.add(pg); }
     infoCard(g, 0.8, 0.3, 'Book Stand', ['Your book pages load here once the page images are in Business HQ storage.'], 0, 1.62, -1.3, -0.1);
+    stationTray('revise', g, -0.62, -0.72);
+    stationTray('approve', g, 0.62, -0.72);
   }
   // Apparel corner: design binder, shirt, colours
-  buildApparel(stationGroup(STATIONS[3]));
+  { const g = stationGroup(STATIONS[3]); buildApparel(g); stationTray('revise', g, -0.95, -0.35); stationTray('approve', g, 0.95, -0.35); }
   // Brainstorm wall
   {
     const g = stationGroup(STATIONS[4]);
@@ -1290,6 +1451,8 @@ function buildStations() {
     box(0.02, 1.99, 0.03, MAT.gold, -1.66, 0, 0, board); box(0.02, 1.99, 0.03, MAT.gold, 1.66, 0, 0, board);
     const add = makeButton(0.34, 0.1, '+ New note', () => newNote(), { parent: board });
     add.position.set(1.4, -0.86, 0.02);
+    stationTray('revise', g, -0.75, -0.8);
+    stationTray('approve', g, 0.75, -0.8);
   }
   // Sales & pipeline wall, behind the directors (in front of you at the desk)
   {
@@ -1406,6 +1569,10 @@ function activate(hit, c) {
   const o = hit.object, kind = o.userData.kind;
   if (kind === 'button') { o.userData.onPress(); return null; }
   if (kind === 'ring') { teleport(o.userData.station); return null; }
+  if (kind === 'spinner' && c && apparel.current) {
+    const pr = apparel.proof || makeProof();
+    if (pr) { scene.attach(pr); pr.position.copy(hit.point); pr.lookAt(headPos()); return pr; }
+  }
   if (kind === 'spinner') { if (c) { aimRay(c); spinGrab = { c, a0: Math.atan2(raycaster.ray.direction.x, raycaster.ray.direction.z), s0: apparel.spin }; apparel.autoSpin = false; } return null; }
   if (kind === 'handle' && c) {
     const obj = o.userData.owner;
@@ -1507,15 +1674,16 @@ canvas.addEventListener('pointerdown', (e) => {
   drag = { x: e.clientX, y: e.clientY, moved: 0, hit, obj: null, plane: null };
   const k = hit && hit.object.userData.kind;
   if (k === 'spinner') { drag.spin = apparel.spin; apparel.autoSpin = false; }
-  if (k === 'doc' || k === 'note' || k === 'design') {
+  if (k === 'doc' || k === 'note' || k === 'design' || k === 'proof') {
     const obj = hit.object.userData.owner; obj.userData.fly = obj.userData.glide = null; clearState(obj);
     drag.obj = obj; setGlow(obj, true); hideToast();
     const wp = obj.getWorldPosition(V());
     if (obj.userData.kind === 'note' && obj.parent === board) {
       const n = new THREE.Vector3(0, 0, 1).applyQuaternion(board.getWorldQuaternion(new THREE.Quaternion()));
       drag.plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n, board.getWorldPosition(V()).add(n.clone().multiplyScalar(0.03)));
-    } else if (wp.y < 1.0) {
-      drag.plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(DESK.y + 0.06)); scene.attach(obj); if (!obj.userData.crumpled) obj.rotation.set(-PI / 2, 0, 0);
+    } else if (wp.y < 1.0 || ((obj.userData.kind === 'doc' || obj.userData.kind === 'proof') && currentStation.id !== 'desk')) {
+      const py = currentStation.id === 'desk' ? DESK.y + 0.06 : 1.0;
+      drag.plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -py); scene.attach(obj); if (!obj.userData.crumpled) obj.rotation.set(-PI / 2, 0, 0);
     } else drag.plane = new THREE.Plane().setFromNormalAndCoplanarPoint(camera.getWorldDirection(V()).negate(), wp);
   }
 });
@@ -1699,7 +1867,7 @@ async function newNote(text) {
 }
 const docKey = (r) => [r.goal, r.result, r.next_recipient, r.file_name, r.status].join('|');
 async function syncDocs() {
-  const rows = await rest('/rest/v1/hq_ai_handoffs?select=id,business,worker,goal,result,status,next_recipient,file_name,created_at,decision,decision_note,decided_at&decision=is.null&status=in.(draft,ready_for_review)&order=created_at.desc&limit=10');
+  const rows = await rest('/rest/v1/hq_ai_handoffs?select=id,business,worker,goal,result,status,next_recipient,file_name,created_at,decision,decision_note,decided_at&decision=is.null&status=in.(draft,ready_for_review)&order=created_at.desc&limit=20');
   const ids = new Set(rows.map((r) => r.id));
   for (const g of [...docs]) {
     const u = g.userData, busy = u.heldBy || u.fly || u.glide || u.doc.state || !g.visible;
@@ -1715,7 +1883,8 @@ async function syncDocs() {
     repaint(g.userData.paper.userData.tex, drawDoc(g.userData.doc));
     if (moved && !g.userData.fly && !g.userData.glide) { g.userData.home = homeFor(g); goHome(g); }
   }
-  live.onDesk = docs.filter((d) => d.visible && !d.userData.doc.state && !d.userData.atDirector).length;
+  live.onDesk = docs.filter((d) => d.visible && !d.userData.doc.state && !d.userData.atDirector && d.userData.shelfSlot == null).length;
+  drawShelfLabel();
   live.withCrew = docs.filter((d) => d.visible && d.userData.atDirector).length;
 }
 async function syncNotes() {
@@ -1798,13 +1967,14 @@ function drawAll() {
   if (salesCard) repaint(salesCard.userData.tex, drawSales);
   if (pipeCard) repaint(pipeCard.userData.tex, drawPipeline);
   if (trophyCard) repaint(trophyCard.userData.tex, drawTrophies);
+  drawShelfLabel();
   const b = $('#liveBadge'); b.textContent = live.ok ? '● Live · Business HQ' : 'Not signed in'; b.style.color = live.ok ? '#9fd8a8' : '';
 }
 function clearLive() {
   for (const g of [...docs]) removeSheet(g);
   for (const g of sheets().filter((o) => o.userData.kind === 'note')) removeSheet(g);
   for (const g of [...apparel.cards]) removeDesignCard(g);
-  apparel.names.clear(); apparel.current = null; if (apparel.wrap) { updateDecal(); drawBinder(); drawShirtLabel(); }
+  apparel.names.clear(); apparel.current = null; for (const o of scene.children.filter((x) => x.userData && x.userData.kind === 'proof')) removeProof(o); if (apparel.wrap) { updateDecal(); drawBinder(); drawShirtLabel(); }
   Object.assign(live, { ok: false, onDesk: 0, withCrew: 0, notes: 0, sales: '', counts: null, trophies: [] }); lastSales = null; setSpeaker(null); drawAll();
 }
 let syncTick = 0, syncing = false, designsBusy = false;
@@ -1825,7 +1995,7 @@ setInterval(() => { syncTick++; syncAll(syncTick % 7 === 0); }, 3000);
 // ================= frame loop =================
 const clock = new THREE.Clock();
 let hovered = new Set();
-const sheets = () => [...apparel.cards, ...docs, ...board.children.filter((o) => o.userData && o.userData.kind === 'note'), ...scene.children.filter((o) => o.userData && o.userData.kind === 'note')];
+const sheets = () => [...apparel.cards, ...docs, ...scene.children.filter((o) => o.userData && o.userData.kind === 'proof'), ...board.children.filter((o) => o.userData && o.userData.kind === 'note'), ...scene.children.filter((o) => o.userData && o.userData.kind === 'note')];
 function frame() {
   const dt = Math.min(0.05, clock.getDelta()), t = clock.elapsedTime, presenting = renderer.xr.isPresenting;
   const newHover = presenting ? updateXR(dt) : new Set();
@@ -1833,13 +2003,13 @@ function frame() {
     const k = o.userData.kind;
     if (k === 'button') o.scale.setScalar(1);
     if (k === 'ring') o.userData.ring.scale.setScalar(1);
-    if (k === 'doc' || k === 'note' || k === 'design') setGlow(o.userData.owner, !!o.userData.owner.userData.heldBy);
+    if (k === 'doc' || k === 'note' || k === 'design' || k === 'proof') setGlow(o.userData.owner, !!o.userData.owner.userData.heldBy);
   }
   for (const o of newHover) {
     const k = o.userData.kind;
     if (k === 'button') o.scale.setScalar(1.08);
     if (k === 'ring') o.userData.ring.scale.setScalar(1.15);
-    if (k === 'doc' || k === 'note' || k === 'design' || k === 'handle') setGlow(o.userData.owner, true);
+    if (k === 'doc' || k === 'note' || k === 'design' || k === 'proof' || k === 'handle') setGlow(o.userData.owner, true);
   }
   hovered = newHover;
 
@@ -1870,8 +2040,8 @@ buildWindowView();
 buildLights();
 buildDesk(DESK, true);
 buildDesk(BOARD_T, false);
-makeTray('revise', -0.85);
-makeTray('approve', 0.85);
+deskTray('revise', -0.85);
+deskTray('approve', 0.85);
 buildTrash();
 CREW.forEach(makeCrew);
 buildConsole();
