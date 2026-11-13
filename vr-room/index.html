@@ -53,8 +53,8 @@ button.badge.signed{border-color:var(--gold);color:var(--gold2)}
 
 <div class="top">
   <a class="badge" href="../">← Business HQ</a>
-  <span class="badge"><b>Executive Office</b> · preview v2</span>
-  <span class="badge demo">DEMO · nothing here saves yet</span>
+  <span class="badge"><b>Executive Office</b></span>
+  <span class="badge" id="liveBadge">Not signed in</span>
   <button class="badge" id="authBadge" type="button">Sign in with phone code</button>
 </div>
 
@@ -67,10 +67,9 @@ button.badge.signed{border-color:var(--gold);color:var(--gold2)}
 
 <div class="dock">
   <div class="row" id="stationRow"><button class="vr" id="enterVR" disabled>Checking VR…</button><span class="lbl">Go to</span></div>
-  <div class="row" id="speakRow"><span class="lbl">Demo · who's speaking</span></div>
   <div class="row" id="seatRow"><span class="lbl">Desk height in VR</span><button data-seat="sit">Sitting</button><button data-seat="stand">Standing</button><button data-seat="down">Desk ▼</button><button data-seat="up">Desk ▲</button></div>
   <div class="idea" id="ideaRow" hidden><input id="ideaIn" maxlength="70" placeholder="Type a brainstorm idea…" aria-label="New brainstorm idea"><button id="ideaAdd">Add note</button></div>
-  <div class="hint" id="hint">Drag to look · tap a gold floor ring to move · drag a document into a box, onto a director, or into the trash</div>
+  <div class="hint" id="hint">Drag to look · tap a gold floor ring to move · drag a paper into a box, onto a director, or into the trash · everything saves to Business HQ</div>
 </div>
 
 <div id="boot">Opening the executive office…<small>Loading the 3D engine</small></div>
@@ -95,10 +94,10 @@ const clamp = THREE.MathUtils.clamp;
 const lerp = (a, b, k) => a + (b - a) * k;
 
 // Your desk: a curved arc wrapping around your chair at the origin, facing -z.
-const DESK = { y: 0.74, r0: 0.52, r1: 1.18, half: 1.15 };
+const DESK = { y: 0.74, r0: 0.52, r1: 1.55, half: 1.25 };
 // The directors' crescent table across from you.
-const BOARD_T = { y: 0.74, r0: 1.62, r1: 1.98, half: 0.62 };
-const CHAIR_R = 2.45;
+const BOARD_T = { y: 0.74, r0: 1.9, r1: 2.26, half: 0.6 };
+const CHAIR_R = 2.72;
 const polar = (r, a) => [r * Math.sin(a), -r * Math.cos(a)]; // angle 0 = straight ahead
 const faceCenter = (x, z) => Math.atan2(-x, -z);            // yaw so +z faces you
 
@@ -115,14 +114,10 @@ const CREW = [
   { name: 'Ava',    title: 'Executive Director',   ang: 0,    phase: 1.3, role: 'commander' },
   { name: 'Bob',    title: 'Marketing Director',   ang: 0.4,  phase: 2.6, role: 'pilot' },
 ];
-// Preview copies of documents already in the Handoffs tray (titles only, not linked yet).
-const DOCS = [
-  { type: 'PLAN',       title: 'Business HQ next-generation plan', from: 'Claude', to: 'Ava' },
-  { type: 'PLAN',       title: 'VR Boardroom plan',                from: 'Claude', to: 'Ava' },
-  { type: 'STRATEGY',   title: 'Laser-file strategy',              from: 'Claude', to: 'Bob' },
-  { type: 'BOOK DRAFT', title: 'Book two · Outer Space (Rev 1)',   from: 'Claude', to: 'Michael' },
-  { type: 'LASER FILE', title: 'Sample vector · test sign',        from: 'Sample', to: 'Michael' },
-];
+// Business HQ names for each worker code.
+const WHO = { chatgpt: 'Ava', claude: 'Claude', grok: 'Bob', owner: 'Michael' };
+const CODE_OF = { Ava: 'chatgpt', Claude: 'claude', Bob: 'grok' };
+const BIZ = { wb: 'WORKING BONES', fb: 'FUNNY BONES KIDS' };
 
 // ================= renderer / scene =================
 const canvas = $('#c');
@@ -422,7 +417,7 @@ function makeTray(kind, ang) {
   zone.userData.target.ref = t;
   trays.push(t); return t;
 }
-const trash = { x: 1.3, z: -0.25, top: 0.5, r: 0.19, swish: 0, items: [], flash: 0 };
+const trash = { x: 1.5, z: 0.2, top: 0.5, r: 0.19, swish: 0, items: [], flash: 0 };
 let trashLabel;
 function buildTrash() {
   const g = new THREE.Group(); g.position.set(trash.x, 0, trash.z); scene.add(g);
@@ -452,13 +447,15 @@ function drawDoc(doc) {
     c.fillStyle = '#f5f0e6'; c.fillRect(0, 0, w, h);
     c.fillStyle = '#0d0d0f'; c.fillRect(0, 0, w, h * 0.15);
     c.fillStyle = '#c9a24a'; c.fillRect(0, h * 0.15, w, h * 0.008);
-    c.fillStyle = '#e6c878'; c.font = `700 ${h * 0.045}px ${SANS}`; c.textAlign = 'left'; c.fillText(doc.type, w * 0.07, h * 0.095);
-    c.fillStyle = '#a59f92'; c.font = `500 ${h * 0.032}px ${SANS}`; c.textAlign = 'right'; c.fillText('WORKING BONES HQ', w * 0.93, h * 0.095);
-    c.textAlign = 'left'; c.fillStyle = '#16120a'; c.font = `600 ${h * 0.068}px ${SERIF}`;
-    const y = wrap(c, doc.title, w * 0.07, h * 0.26, w * 0.86, h * 0.078, 3);
-    c.fillStyle = '#6b6457'; c.font = `500 ${h * 0.036}px ${SANS}`; c.fillText(`From ${doc.from}  →  for ${doc.to}`, w * 0.07, y + h * 0.01);
-    c.fillStyle = '#d9d2c3'; for (let i = 0; i < 7; i++) c.fillRect(w * 0.07, y + h * (0.07 + i * 0.05), w * (i % 3 === 2 ? 0.55 : 0.86), h * 0.014);
-    c.fillStyle = '#8a8172'; c.font = `600 ${h * 0.028}px ${SANS}`; c.fillText('PREVIEW COPY · NOT LINKED YET', w * 0.07, h * 0.95);
+    c.fillStyle = '#e6c878'; c.font = `700 ${h * 0.042}px ${SANS}`; c.textAlign = 'left'; c.fillText(doc.type, w * 0.07, h * 0.095);
+    c.fillStyle = '#a59f92'; c.font = `500 ${h * 0.03}px ${SANS}`; c.textAlign = 'right'; c.fillText(doc.biz, w * 0.93, h * 0.095);
+    c.textAlign = 'left'; c.fillStyle = '#16120a'; c.font = `600 ${h * 0.064}px ${SERIF}`;
+    let y = wrap(c, doc.title, w * 0.07, h * 0.255, w * 0.86, h * 0.074, 3);
+    c.fillStyle = '#6b6457'; c.font = `500 ${h * 0.034}px ${SANS}`; c.fillText(`From ${doc.from}  →  for ${doc.to}`, w * 0.07, y + h * 0.005);
+    c.fillStyle = '#3a342a'; c.font = `500 ${h * 0.033}px ${SANS}`;
+    wrap(c, doc.summary || '(no summary yet)', w * 0.07, y + h * 0.075, w * 0.86, h * 0.043, doc.file ? 6 : 8);
+    if (doc.file) { c.fillStyle = '#9c7a2c'; c.font = `600 ${h * 0.03}px ${SANS}`; c.fillText('📎 ' + doc.file.slice(0, 44), w * 0.07, h * 0.89); }
+    c.fillStyle = '#8a8172'; c.font = `600 ${h * 0.026}px ${SANS}`; c.fillText(`LIVE · BUSINESS HQ · ${doc.when}`, w * 0.07, h * 0.95);
     if (doc.state) {
       const approve = doc.state === 'approve', revise = doc.state === 'revise';
       const label = approve ? 'APPROVED' : revise ? 'REVISE' : `WITH ${doc.state.slice(7).toUpperCase()}`;
@@ -487,17 +484,48 @@ function equipSheet(g, w, h, ballMat) {
   register(ball, g.userData.kind, g);
   Object.assign(g.userData, { frame, handles, ball, heldBy: null, crumpled: false, fly: null, glide: null });
 }
-function makeDoc(spec, i) {
-  const doc = { ...spec, state: null };
+function docFromRow(row) {
+  return {
+    id: row.id, type: (row.worker ? `FROM ${WHO[row.worker] || row.worker}` : 'HANDOFF').toUpperCase(), biz: BIZ[row.business] || row.business,
+    title: row.goal, summary: row.result, from: WHO[row.worker] || row.worker, to: WHO[row.next_recipient] || 'Michael',
+    file: row.file_name || '', when: new Date(row.created_at).toLocaleDateString(), state: null, row,
+  };
+}
+const DESK_SLOTS = [-0.69, -0.46, -0.23, 0, 0.23, 0.46, 0.69];
+function freeDeskSlot() {
+  const used = new Set(docs.filter((d) => d.userData.slot != null).map((d) => d.userData.slot));
+  for (let i = 0; i < DESK_SLOTS.length; i++) { const k = (3 + (i % 2 ? -1 : 1) * Math.ceil(i / 2)); if (k >= 0 && k < DESK_SLOTS.length && !used.has(k)) return k; }
+  return null;
+}
+function homeFor(g) {
+  const to = g.userData.doc.row.next_recipient, u = g.userData;
+  const name = WHO[to];
+  if (to && to !== 'owner' && CODE_OF[name]) {
+    const D = crew.find((x) => x.spec.name === name);
+    const n = docs.filter((d) => d !== g && d.userData.atDirector === name).length;
+    const [x, z] = polar(BOARD_T.r1 - 0.13, D.spec.ang + (n - 0.5) * 0.09);
+    u.slot = null; u.atDirector = name;
+    return { p: new THREE.Vector3(x, BOARD_T.y + 0.005 + n * 0.0006, z), q: new THREE.Quaternion().setFromEuler(new THREE.Euler(-PI / 2, 0, -D.spec.ang)) };
+  }
+  u.atDirector = null;
+  if (u.slot == null) u.slot = freeDeskSlot();
+  const a = DESK_SLOTS[u.slot ?? 3], [x, z] = polar(0.78, a);
+  return { p: new THREE.Vector3(x, DESK.y + 0.004 + (u.slot ?? 3) * 0.0006, z), q: new THREE.Quaternion().setFromEuler(new THREE.Euler(-PI / 2, 0, -a * 0.9)) };
+}
+function makeDoc(row) {
+  const doc = docFromRow(row);
   const g = new THREE.Group(); g.userData = { kind: 'doc', doc };
   const paper = labelPlane(0.2, 0.26, drawDoc(doc), { px: 2600, transparent: false, side: THREE.DoubleSide });
   decal(paper.material); g.add(paper); g.userData.paper = paper;
   equipSheet(g, 0.2, 0.26, MAT.paperBall);
-  const a = -0.46 + i * 0.23, [x, z] = polar(0.74, a);
-  g.position.set(x, DESK.y + 0.004 + i * 0.0006, z);
-  g.rotation.set(-PI / 2, 0, -a * 0.9 + (Math.random() - 0.5) * 0.06);
-  g.userData.home = { p: g.position.clone(), q: g.quaternion.clone() };
-  scene.add(g); register(paper, 'doc', g); docs.push(g); return g;
+  docs.push(g);
+  g.userData.home = homeFor(g); g.position.copy(g.userData.home.p); g.quaternion.copy(g.userData.home.q);
+  scene.add(g); register(paper, 'doc', g); return g;
+}
+function removeSheet(g) {
+  for (let i = hitables.length - 1; i >= 0; i--) if (hitables[i].userData.owner === g) hitables.splice(i, 1);
+  const i = docs.indexOf(g); if (i >= 0) docs.splice(i, 1);
+  if (g.parent) g.parent.remove(g);
 }
 function setDocState(g, state) { g.userData.doc.state = state; repaint(g.userData.paper.userData.tex, drawDoc(g.userData.doc)); }
 
@@ -511,8 +539,8 @@ function drawNote(text, sub) {
     if (sub) { c.fillStyle = '#6b6457'; c.font = `500 ${h * 0.065}px ${SANS}`; wrap(c, sub, w * 0.08, h * 0.86, w * 0.84, h * 0.07, 2); }
   };
 }
-function addNote(text, x, y, sub = '') {
-  const g = new THREE.Group(); g.userData = { kind: 'note', text };
+function addNote(text, x, y, sub = '', id = null) {
+  const g = new THREE.Group(); g.userData = { kind: 'note', text, id };
   const paper = labelPlane(0.24, 0.24, drawNote(text, sub), { px: 2000, transparent: false, side: THREE.DoubleSide });
   decal(paper.material); g.add(paper); g.userData.paper = paper;
   equipSheet(g, 0.24, 0.24, MAT.noteBall);
@@ -713,11 +741,6 @@ function buildConsole() {
   const [x, z] = polar(1.0, 0.62);
   const g = new THREE.Group(); g.position.set(x, DESK.y + 0.05, z); g.rotation.set(0, faceCenter(x, z), 0); scene.add(g);
   const tilt = new THREE.Group(); tilt.rotation.x = -0.85; g.add(tilt);
-  const title = labelPlane(0.46, 0.04, (c, w, h) => { c.textAlign = 'center'; c.fillStyle = '#c9bea4'; c.font = `600 ${h * 0.55}px ${SANS}`; c.fillText("DEMO · WHO'S SPEAKING", w / 2, h * 0.7); }, { px: 2400 });
-  title.position.y = 0.065; tilt.add(title);
-  [['Ava', 'Ava'], ['Claude', 'Claude'], ['Bob', 'Bob'], ['Quiet', null]].forEach(([label, sp], i) => {
-    const b = makeButton(0.105, 0.06, label, () => setSpeaker(sp), { parent: tilt }); b.position.set(-0.18 + i * 0.12, 0, 0); b.userData.sp = sp; consoleButtons.push(b);
-  });
   const t2 = labelPlane(0.46, 0.04, (c, w, h) => { c.textAlign = 'center'; c.fillStyle = '#c9bea4'; c.font = `600 ${h * 0.55}px ${SANS}`; c.fillText('DESK HEIGHT', w / 2, h * 0.7); }, { px: 2400 });
   t2.position.y = -0.07; tilt.add(t2);
   [['Sitting', 'sit'], ['Standing', 'stand'], ['Desk ▼', 'down'], ['Desk ▲', 'up']].forEach(([label, cmd], i) => {
@@ -725,23 +748,26 @@ function buildConsole() {
   });
 }
 function greeting() { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; }
+let welcomeCard;
+function drawWelcome(c, w, h) {
+  panelBg(c, w, h, { radius: 0.05 });
+  c.textAlign = 'left'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.08}px ${SERIF}`; c.fillText(`${greeting()}, Michael`, w * 0.06, h * 0.14);
+  c.fillStyle = live.ok ? '#9fd8a8' : '#e09a6a'; c.font = `600 ${h * 0.042}px ${SANS}`;
+  c.fillText(live.ok ? `● LIVE · Business HQ · updated ${live.updated || '—'}` : '○ Not signed in — tap "Sign in with phone code"', w * 0.06, h * 0.23);
+  c.fillStyle = '#f0e6cc'; c.font = `500 ${h * 0.045}px ${SANS}`; let y = h * 0.34;
+  const lines = live.ok ? [
+    `${live.onDesk} paper${live.onDesk === 1 ? '' : 's'} on your desk · ${live.withCrew} with the crew`,
+    `${live.notes} brainstorm idea${live.notes === 1 ? '' : 's'} on the wall`,
+    live.sales || 'Fourthwall: no order check yet',
+  ] : ['Your papers, ideas and sales appear here once this headset is signed in.'];
+  for (const line of lines) { c.fillStyle = '#c9a24a'; c.fillText('•', w * 0.06, y); c.fillStyle = '#f0e6cc'; y = wrap(c, line, w * 0.1, y, w * 0.84, h * 0.055, 2) + h * 0.012; }
+  c.fillStyle = '#a59f92'; c.font = `500 ${h * 0.036}px ${SANS}`;
+  wrap(c, 'Pick up: trigger or pinch. Closer/further: thumbstick or pull your hand. Point & let go to send. Grip or fist to crumple.', w * 0.06, h * 0.82, w * 0.88, h * 0.048, 3);
+}
 function buildWelcome() {
-  const card = labelPlane(0.5, 0.36, (c, w, h) => {
-    panelBg(c, w, h, { radius: 0.05 });
-    c.textAlign = 'left'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.08}px ${SERIF}`; c.fillText(`${greeting()}, Michael`, w * 0.06, h * 0.14);
-    c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.04}px ${SANS}`; c.fillText('Executive Office · preview v2', w * 0.06, h * 0.22);
-    c.font = `500 ${h * 0.043}px ${SANS}`; let y = h * 0.32;
-    for (const line of [
-      'Point and pull the trigger (or pinch) to pick up a paper. It stays where it is.',
-      'Thumbstick, or pull your hand in, to bring it closer. Push to send it away.',
-      'Point at Ava, Claude, Bob, a box or the trash and let go: it glides there. Or toss it.',
-      'Grab a gold corner, or use both hands, to resize. Squeeze the grip (or make a fist) to crumple.',
-    ]) { c.fillStyle = '#c9a24a'; c.fillText('•', w * 0.06, y); c.fillStyle = '#f0e6cc'; y = wrap(c, line, w * 0.1, y, w * 0.84, h * 0.055, 3) + h * 0.012; }
-    c.fillStyle = '#e09a6a'; c.font = `600 ${h * 0.038}px ${SANS}`;
-    wrap(c, 'DEMO: nothing saves yet. Sign in with a phone code to get ready for live data.', w * 0.06, h * 0.93, w * 0.88, h * 0.045, 2);
-  }, { px: 2600 });
+  welcomeCard = labelPlane(0.5, 0.36, drawWelcome, { px: 2600 });
   const [x, z] = polar(0.98, -0.66);
-  card.position.set(x, DESK.y + 0.12, z); card.rotation.set(0, faceCenter(x, z), 0); card.rotateX(-0.75); scene.add(card);
+  welcomeCard.position.set(x, DESK.y + 0.12, z); welcomeCard.rotation.set(0, faceCenter(x, z), 0); welcomeCard.rotateX(-0.75); scene.add(welcomeCard);
 }
 
 // ================= toast + undo =================
@@ -784,38 +810,60 @@ function clearState(obj) {
   const u = obj.userData;
   if (u.kind === 'doc' && u.doc.state) { const t = trays.find((x) => x.kind === u.doc.state); if (t) t.count = Math.max(0, t.count - 1); setDocState(obj, null); }
 }
+const snapshot = (row) => ({ decision: row.decision ?? null, status: row.status, next_recipient: row.next_recipient ?? null, decided_at: row.decided_at ?? null, decision_note: row.decision_note ?? null });
 // Final landing spots ------------------------------------------------
 function intoTray(obj, t) {
-  if (obj.userData.kind !== 'doc') { layFlatAt(obj, t.spot()); return; }
+  if (obj.userData.kind !== 'doc') { goHome(obj); return; }
   setCrumpled(obj, false); obj.scale.setScalar(1);
   layFlatAt(obj, t.spot(), 0); obj.quaternion.copy(t.g.quaternion).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-PI / 2, 0, (Math.random() - 0.5) * 0.1)));
-  t.count++; t.flash = 1.2; setDocState(obj, t.kind); lastAction = { obj };
-  const title = obj.userData.doc.title;
-  if (t.kind === 'approve') showToast(`Approved: ${title}`, 'Preview only — not saved.');
-  else showToast(`Sent back: ${title}`, 'Next stage: your next spoken sentence becomes the revision note.');
+  t.count++; t.flash = 1.2; setDocState(obj, t.kind);
+  const row = obj.userData.doc.row, prev = snapshot(row), title = obj.userData.doc.title, now = new Date().toISOString();
+  lastAction = { obj, prev };
+  if (t.kind === 'approve') {
+    saveHandoff(obj, { decision: 'approved', status: 'reviewed', decided_at: now });
+    showToast(`Approved: ${title}`, 'Saved to Business HQ. Approves the work only — nothing is published.');
+  } else {
+    saveHandoff(obj, { decision: 'revise', status: 'draft', decided_at: now, decision_note: null });
+    pendingNote = { id: row.id, since: now, title };
+    showToast(`Sent back: ${title}`, 'Say why in the boardroom — your next sentence is saved as the note.');
+  }
 }
 function toDirector(obj, D) {
-  const [x, z] = polar(BOARD_T.r1 - 0.12, D.spec.ang + (Math.random() - 0.5) * 0.08);
-  setCrumpled(obj, false); obj.scale.setScalar(1);
-  layFlatAt(obj, new THREE.Vector3(x, BOARD_T.y + 0.005, z), D.spec.ang + PI);
-  D.nod = 1; lastAction = { obj };
-  if (obj.userData.kind === 'doc') { setDocState(obj, `handed:${D.spec.name}`); showToast(`Handed to ${D.spec.name}`, `${obj.userData.doc.title} · preview only, not sent yet.`); }
-  else showToast(`Idea handed to ${D.spec.name}`, 'Preview only — not sent yet.');
+  setCrumpled(obj, false); obj.scale.setScalar(1); D.nod = 1;
+  const code = CODE_OF[D.spec.name];
+  if (obj.userData.kind === 'doc') {
+    const row = obj.userData.doc.row, prev = snapshot(row);
+    lastAction = { obj, prev };
+    obj.userData.doc.to = D.spec.name; setDocState(obj, null);
+    saveHandoff(obj, { next_recipient: code, status: 'ready_for_review' });
+    obj.userData.home = homeFor(obj); goHome(obj);
+    showToast(`Handed to ${D.spec.name}`, `${obj.userData.doc.title} · saved to Business HQ.`);
+  } else {
+    lastAction = { obj, note: { status: 'open', handed_to: null } };
+    obj.visible = false; saveNote(obj, { status: 'handed', handed_to: code });
+    showToast(`Idea handed to ${D.spec.name}`, `"${obj.userData.text}" · saved to Business HQ.`);
+  }
 }
 function intoTrash(obj) {
   setCrumpled(obj, true); obj.visible = false; obj.userData.fly = null;
   trash.items.push(obj); trash.swish++; trash.flash = 1.5; repaint(trashLabel.userData.tex, drawTrashLabel);
-  lastAction = { obj, trash: true };
-  const name = obj.userData.kind === 'doc' ? obj.userData.doc.title : obj.userData.text;
-  showToast('Swish! Trashed', `${name} · Undo or "Restore last" brings it back.`);
+  const isDoc = obj.userData.kind === 'doc';
+  lastAction = { obj, trash: true, prev: isDoc ? snapshot(obj.userData.doc.row) : null, note: isDoc ? null : { status: 'open' } };
+  if (isDoc) saveHandoff(obj, { decision: 'trashed', status: 'reviewed', decided_at: new Date().toISOString() });
+  else saveNote(obj, { status: 'trashed' });
+  showToast('Swish! Trashed', `${isDoc ? obj.userData.doc.title : obj.userData.text} · Undo or "Restore last" brings it back.`);
 }
 function restoreTrash() {
   const obj = trash.items.pop(); if (!obj) { showToast('Trash is empty', 'Nothing to restore.', false); return; }
-  goHome(obj); showToast('Restored', 'Back where it started.', false);
+  if (obj.userData.kind === 'doc') saveHandoff(obj, { decision: null, status: 'ready_for_review', decided_at: null });
+  else saveNote(obj, { status: 'open' });
+  goHome(obj); showToast('Restored', 'Back where it started, and reopened in Business HQ.', false);
 }
 function undoLast() {
   const a = lastAction; lastAction = null; hideToast(); if (!a) return;
   if (a.trash) { const i = trash.items.indexOf(a.obj); if (i >= 0) trash.items.splice(i, 1); }
+  if (a.prev) { if (pendingNote && pendingNote.id === a.obj.userData.doc.row.id) pendingNote = null; saveHandoff(a.obj, a.prev); a.obj.userData.doc.to = WHO[a.prev.next_recipient] || 'Michael'; a.obj.userData.home = homeFor(a.obj); }
+  if (a.note) saveNote(a.obj, a.note);
   clearState(a.obj); goHome(a.obj);
 }
 function stickToBoard(obj, worldPoint) {
@@ -823,6 +871,14 @@ function stickToBoard(obj, worldPoint) {
   setCrumpled(obj, false); board.attach(obj);
   obj.position.set(clamp(lp.x, -1.48, 1.48), clamp(lp.y, -0.82, 0.72), 0.012 + Math.random() * 0.002);
   obj.rotation.set(0, 0, (Math.random() - 0.5) * 0.08);
+  obj.userData.home = { board: true, x: obj.position.x, y: obj.position.y };
+  saveNote(obj, { x: +obj.position.x.toFixed(3), y: +obj.position.y.toFixed(3) });
+}
+// A decided paper put back on a desk or table is reopened.
+function reopenIfDecided(obj) {
+  const u = obj.userData; if (u.kind !== 'doc') return;
+  const d = u.doc.row.decision;
+  if (d === 'approved' || d === 'revise') { saveHandoff(obj, { decision: null, status: 'ready_for_review', decided_at: null }); showToast('Reopened', `${u.doc.title} is back on your list.`, false); }
 }
 // Sends a released sheet toward a target in a smooth arc.
 function glideTo(obj, kind, ref, point) {
@@ -850,8 +906,8 @@ function place(obj, vel) {
     for (const D of crew) if (D.proxy.getWorldPosition(V()).distanceTo(p) < 0.45) return toDirector(obj, D);
     if (Math.hypot(p.x - trash.x, p.z - trash.z) < trash.r && p.y < trash.top + 0.3) return intoTrash(obj);
     if (u.kind === 'note' && !u.crumpled) { const lp = board.worldToLocal(p.clone()); if (Math.abs(lp.z) < 0.45 && Math.abs(lp.x) < 1.62 && Math.abs(lp.y) < 0.98) return stickToBoard(obj, p); }
-    if (overArc(DESK, p)) return layFlatAt(obj, new THREE.Vector3(p.x, DESK.y + (u.crumpled ? 0.045 : 0.005), p.z));
-    if (overArc(BOARD_T, p)) return layFlatAt(obj, new THREE.Vector3(p.x, BOARD_T.y + (u.crumpled ? 0.045 : 0.005), p.z));
+    if (overArc(DESK, p)) { reopenIfDecided(obj); return layFlatAt(obj, new THREE.Vector3(p.x, DESK.y + (u.crumpled ? 0.045 : 0.005), p.z)); }
+    if (overArc(BOARD_T, p)) { reopenIfDecided(obj); return layFlatAt(obj, new THREE.Vector3(p.x, BOARD_T.y + (u.crumpled ? 0.045 : 0.005), p.z)); }
     if (u.crumpled) { scene.attach(obj); u.fly = { vel: V(), spin: 0 }; return; }
     scene.attach(obj); obj.lookAt(camera.getWorldPosition(V()));
   }
@@ -924,7 +980,7 @@ function buildStations() {
       c.font = `600 ${h * 0.045}px ${SANS}`; c.fillText('red = cut · dark = engrave', w / 2, h * 0.88);
     }, { px: 2400, transparent: false });
     decal(sheet.material); sheet.rotation.x = -PI / 2; sheet.position.set(0, 0.926, -1.2); g.add(sheet);
-    infoCard(g, 0.9, 0.36, 'Laser Bench', ['Real-size preview of your vector files comes next.', 'Sheet shown at about 432 × 406 mm, the xTool D1 Pro work area.'], 0, 1.45, -1.55, -0.15);
+    infoCard(g, 0.9, 0.36, 'Laser Bench', ['Real-size preview of your vector files: upload SVG or PNG files to Business HQ to fill this bench.', 'Sheet shown at about 432 × 406 mm, the xTool D1 Pro work area.'], 0, 1.45, -1.55, -0.15);
   }
   // Book stand (pages now face you)
   {
@@ -936,12 +992,12 @@ function buildStations() {
     box(0.57, 0.006, 0.012, MAT.gold, 0, 0.013, 0.19, top);
     const page = (left) => labelPlane(0.24, 0.32, (c, w, h) => {
       c.fillStyle = '#fbf8f1'; c.fillRect(0, 0, w, h); c.fillStyle = '#16120a'; c.textAlign = 'center';
-      if (left) { c.font = `700 ${h * 0.07}px ${SERIF}`; c.fillText('Funny Bones Kids', w / 2, h * 0.3); c.font = `500 ${h * 0.045}px ${SANS}`; c.fillText('Book stand preview', w / 2, h * 0.4); }
-      else { c.strokeStyle = '#16120a'; c.lineWidth = 3; c.beginPath(); c.arc(w / 2, h * 0.42, w * 0.25, 0, PI * 2); c.stroke(); c.font = `500 ${h * 0.04}px ${SANS}`; c.fillText('Your pages appear here next', w / 2, h * 0.86); }
+      if (left) { c.font = `700 ${h * 0.07}px ${SERIF}`; c.fillText('Funny Bones Kids', w / 2, h * 0.3); c.font = `500 ${h * 0.045}px ${SANS}`; c.fillText('Funny Farm Adventures', w / 2, h * 0.4); }
+      else { c.strokeStyle = '#16120a'; c.lineWidth = 3; c.beginPath(); c.arc(w / 2, h * 0.42, w * 0.25, 0, PI * 2); c.stroke(); c.font = `500 ${h * 0.04}px ${SANS}`; c.fillText('Pages load from Business HQ', w / 2, h * 0.86); }
     }, { px: 2200, transparent: false });
     const Lp = page(true), Rp = page(false);
     for (const [pg, x, ry] of [[Lp, -0.125, 0.04], [Rp, 0.125, -0.04]]) { decal(pg.material); pg.rotation.set(-PI / 2, ry, 0); pg.position.set(x, 0.012, 0); top.add(pg); }
-    infoCard(g, 0.8, 0.3, 'Book Stand', ['Flip pages, pull one out and drop it in Completed or Revised (coming next).'], 0, 1.62, -1.3, -0.1);
+    infoCard(g, 0.8, 0.3, 'Book Stand', ['Your book pages load here once the page images are in Business HQ storage.'], 0, 1.62, -1.3, -0.1);
   }
   // Apparel corner
   {
@@ -969,33 +1025,22 @@ function buildStations() {
     board.add(boardPanel); addTarget(boardPanel, 'board', null);
     box(3.34, 0.02, 0.03, MAT.gold, 0, 0.985, 0, board); box(3.34, 0.02, 0.03, MAT.gold, 0, -0.985, 0, board);
     box(0.02, 1.99, 0.03, MAT.gold, -1.66, 0, 0, board); box(0.02, 1.99, 0.03, MAT.gold, 1.66, 0, 0, board);
-    [['Sample note — grab me and move me', -1.25, 0.45], ['Laser pilot · 12 products (awaiting approval)', -0.45, 0.45], ['Book two · kid-friendly rewrite', 0.35, 0.45], ['Use + New note to add ideas', 1.15, 0.45]]
-      .forEach(([t, x, y]) => addNote(t, x, y));
-    const add = makeButton(0.34, 0.1, '+ New note', () => { noteCount++; addNote(`Idea ${noteCount}`, -1.3 + ((noteCount * 0.34) % 2.6), -0.6, 'Voice text comes with the live connection'); }, { parent: board });
+    const add = makeButton(0.34, 0.1, '+ New note', () => newNote(), { parent: board });
     add.position.set(1.4, -0.86, 0.02);
   }
   // Sales & pipeline wall, behind the directors (in front of you at the desk)
   {
     const g = stationGroup(STATIONS[5]);
-    const score = infoCard(g, 2.3, 1.0, 'Fourthwall sales', ['Not connected in this preview.', 'When it connects, every number shows a LIVE badge and the time it was pulled — never made-up figures.'], 0, 2.15, -2.26);
+    salesCard = labelPlane(2.3, 1.0, drawSales, { px: 900 }); salesCard.position.set(0, 2.15, -2.26); g.add(salesCard);
     const scanTex = canvasTex(64, 256, (c, w, h) => { for (let y = 0; y < h; y += 8) { c.fillStyle = `rgba(240,212,138,${y % 32 === 0 ? 0.35 : 0.08})`; c.fillRect(0, y, w, 2); } });
     scanTex.wrapS = scanTex.wrapT = THREE.RepeatWrapping; scanTex.repeat.set(1, 3);
     holoScan = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 1.0), new THREE.MeshBasicMaterial({ map: scanTex, transparent: true, opacity: 0.35, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending }));
     holoScan.position.set(0, 2.15, -2.255); g.add(holoScan);
-    const pipe = labelPlane(1.7, 0.7, (c, w, h) => {
-      panelBg(c, w, h, { radius: 0.05 });
-      c.textAlign = 'left'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.11}px ${SERIF}`; c.fillText('Pipeline', w * 0.04, h * 0.17);
-      ['Idea', 'Draft', 'Revised', 'Approved'].forEach((t, i) => {
-        const x = w * (0.04 + i * 0.24); c.fillStyle = '#1b1b1f'; rr(c, x, h * 0.28, w * 0.21, h * 0.5, 14); c.fill();
-        c.strokeStyle = '#c9a24a'; c.lineWidth = 2; c.stroke(); c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.075}px ${SANS}`; c.fillText(t, x + w * 0.015, h * 0.38);
-        c.fillStyle = '#8f887a'; c.font = `500 ${h * 0.055}px ${SANS}`; c.fillText('—', x + w * 0.015, h * 0.5);
-      });
-      c.fillStyle = '#a59f92'; c.font = `500 ${h * 0.055}px ${SANS}`; c.fillText('Live counts from Business HQ come with the live connection.', w * 0.04, h * 0.9);
-    }, { px: 1100 });
+    const pipe = labelPlane(1.7, 0.7, drawPipeline, { px: 1100 }); pipeCard = pipe;
     pipe.position.set(-2.7, 1.75, -2.26); g.add(pipe);
     for (const y of [1.25, 1.85]) { box(1.6, 0.03, 0.25, MAT.leather, 2.7, y, -2.16, g); box(1.6, 0.008, 0.252, MAT.gold, 2.7, y + 0.02, -2.16, g); }
     for (let i = 0; i < 3; i++) { const pl = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.06, 20), MAT.gold); pl.position.set(2.25 + i * 0.45, 1.3, -2.16); g.add(pl); }
-    infoCard(g, 1.5, 0.32, 'Trophy shelf', ['Approved work gets displayed here.'], 2.7, 2.3, -2.26);
+    trophyCard = labelPlane(1.5, 0.32, drawTrophies, { px: 1300 }); trophyCard.position.set(2.7, 2.3, -2.26); g.add(trophyCard);
   }
 }
 
@@ -1225,12 +1270,8 @@ canvas.addEventListener('pointercancel', endPointer);
 function buildDock() {
   const sr = $('#stationRow');
   for (const st of STATIONS) { const b = document.createElement('button'); b.textContent = st.name; b.dataset.st = st.id; b.addEventListener('click', () => teleport(st)); sr.appendChild(b); }
-  const sp = $('#speakRow');
-  for (const [label, name] of [['Ava', 'Ava'], ['Claude', 'Claude'], ['Bob', 'Bob'], ['Quiet', '']]) {
-    const b = document.createElement('button'); b.textContent = label; b.dataset.sp = name; b.addEventListener('click', () => setSpeaker(name)); sp.appendChild(b);
-  }
   document.querySelectorAll('#seatRow button').forEach((b) => b.addEventListener('click', () => setSeat(b.dataset.seat)));
-  const addIdea = () => { const v = $('#ideaIn').value.trim(); if (!v) return; noteCount++; addNote(v, -1.3 + ((noteCount * 0.34) % 2.6), -0.55); $('#ideaIn').value = ''; };
+  const addIdea = () => { const v = $('#ideaIn').value.trim(); if (!v) return; newNote(v); $('#ideaIn').value = ''; };
   $('#ideaAdd').addEventListener('click', addIdea);
   $('#ideaIn').addEventListener('keydown', (e) => { if (e.key === 'Enter') addIdea(); });
 }
@@ -1308,7 +1349,7 @@ async function pollPairing() {
       store.set('hq_sess', JSON.stringify({ at: j.session.access_token, rt: j.session.refresh_token, em: 'Meta Quest headset (paired)' }));
       stopPairing(); updateAuthBadge();
       showPairBox('<h2>✓ Headset signed in</h2><p>This headset now has its own Business HQ sign-in. You can sign it out any time from here.</p><div class="row"><button id="pairClose">Done</button></div>');
-      wirePairButtons(); showToast('Headset signed in', 'Paired with your phone. No password was typed.', false); return;
+      wirePairButtons(); showToast('Headset signed in', 'Paired with your phone. Loading your Business HQ…', false); syncAll(true); return;
     }
     if (j.status === 'expired') pairing.until = 0;
   } catch (e) { /* keep trying until the code expires */ }
@@ -1317,7 +1358,7 @@ async function pollPairing() {
 async function signOutHeadset() {
   const s = session(), U = store.get('hq_url'), K = store.get('hq_key');
   if (s && U && K) { try { await fetch(U + '/auth/v1/logout?scope=local', { method: 'POST', headers: { apikey: K, Authorization: 'Bearer ' + s.at } }); } catch (e) {} }
-  store.del('hq_sess'); updateAuthBadge();
+  store.del('hq_sess'); updateAuthBadge(); clearLive();
   showPairBox('<h2>Signed out</h2><p>This headset no longer has a Business HQ sign-in.</p><div class="row"><button id="pairClose">Close</button></div>'); wirePairButtons();
 }
 function wirePairButtons() {
@@ -1329,6 +1370,182 @@ $('#authBadge').addEventListener('click', () => {
   else startPairing();
 });
 setInterval(pairCountdown, 1000);
+
+// ================= live Business HQ data =================
+// Signed in (phone code, or Business HQ on this device): the desk shows your real AI Handoffs,
+// the wall shows real counts and Fourthwall checks, the brainstorm wall saves, and the crew
+// follows the live boardroom. Every write goes through your owner sign-in and database rules.
+const live = { ok: false, updated: '', onDesk: 0, withCrew: 0, notes: 0, sales: '', counts: null, trophies: [] };
+let salesCard, pipeCard, trophyCard, pendingNote = null, lastSales = null, refreshing = null;
+const conf = () => ({ U: store.get('hq_url'), K: store.get('hq_key') });
+async function refreshSession() {
+  const s = session(), { U, K } = conf(); if (!s || !s.rt || !U || !K) return false;
+  try {
+    const r = await fetch(U + '/auth/v1/token?grant_type=refresh_token', { method: 'POST', headers: { apikey: K, 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: s.rt }) });
+    if (!r.ok) { if ([400, 401, 403].includes(r.status)) { store.del('hq_sess'); updateAuthBadge(); } return false; }
+    const j = await r.json(); if (!j.access_token || !j.refresh_token) return false;
+    store.set('hq_sess', JSON.stringify({ at: j.access_token, rt: j.refresh_token, em: s.em })); return true;
+  } catch (e) { return false; }
+}
+async function rest(path, { method = 'GET', body, prefer } = {}, retry = true) {
+  const s = session(), { U, K } = conf(); if (!s || !U || !K) throw new Error('signed out');
+  const headers = { apikey: K, Authorization: 'Bearer ' + s.at, 'Content-Type': 'application/json' }; if (prefer) headers.Prefer = prefer;
+  const r = await fetch(U + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 401 && retry) {
+    const pr = refreshing || (refreshing = refreshSession().finally(() => { refreshing = null; }));
+    if (await pr) return rest(path, { method, body, prefer }, false);
+  }
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  if (r.status === 204) return null; const t = await r.text(); return t ? JSON.parse(t) : null;
+}
+async function saveHandoff(g, patch) {
+  const row = g.userData.doc.row, before = { ...row };
+  Object.assign(row, patch);
+  try { await rest(`/rest/v1/hq_ai_handoffs?id=eq.${row.id}`, { method: 'PATCH', body: { ...patch, updated_at: new Date().toISOString() }, prefer: 'return=minimal' }); refreshCounts().then(drawAll).catch(() => {}); }
+  catch (e) {
+    Object.assign(row, before);
+    const i = trash.items.indexOf(g); if (i >= 0) trash.items.splice(i, 1);
+    clearState(g); g.userData.home = homeFor(g); goHome(g);
+    showToast("Couldn't save to Business HQ", 'Check the connection or sign in again. The paper was put back.', false);
+  }
+}
+async function saveNote(g, patch) {
+  const id = g.userData.id; if (!id) return;
+  try { await rest(`/rest/v1/hq_brainstorm_notes?id=eq.${id}`, { method: 'PATCH', body: { ...patch, updated_at: new Date().toISOString() }, prefer: 'return=minimal' }); }
+  catch (e) { showToast("Couldn't save the idea", 'Check the connection or sign in again.', false); }
+}
+async function newNote(text) {
+  if (!live.ok) { showToast('Sign in first', 'Use "Sign in with phone code" so ideas save to Business HQ.', false); return; }
+  noteCount++;
+  const x = +clamp(-1.3 + ((noteCount * 0.34) % 2.6), -1.48, 1.48).toFixed(3), y = -0.55;
+  const t = String(text || `New idea · ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`).slice(0, 300);
+  try {
+    const rows = await rest('/rest/v1/hq_brainstorm_notes', { method: 'POST', body: { text: t, x, y, business: 'wb' }, prefer: 'return=representation' });
+    const r = rows[0]; addNote(r.text, r.x, r.y, '', r.id); live.notes++; drawAll();
+  } catch (e) { showToast("Couldn't save the idea", 'Check the connection and try again.', false); }
+}
+const docKey = (r) => [r.goal, r.result, r.next_recipient, r.file_name, r.status].join('|');
+async function syncDocs() {
+  const rows = await rest('/rest/v1/hq_ai_handoffs?select=id,business,worker,goal,result,status,next_recipient,file_name,created_at,decision,decision_note,decided_at&decision=is.null&status=in.(draft,ready_for_review)&order=created_at.desc&limit=10');
+  const ids = new Set(rows.map((r) => r.id));
+  for (const g of [...docs]) {
+    const u = g.userData, busy = u.heldBy || u.fly || u.glide || u.doc.state || !g.visible;
+    if (!ids.has(u.doc.row.id) && !busy) removeSheet(g);
+  }
+  for (const r of rows) {
+    const g = docs.find((d) => d.userData.doc.row.id === r.id);
+    if (!g) { makeDoc(r); continue; }
+    if (g.userData.heldBy || docKey(g.userData.doc.row) === docKey(r)) continue;
+    const moved = r.next_recipient !== g.userData.doc.row.next_recipient;
+    Object.assign(g.userData.doc.row, r);
+    const d = docFromRow(r); Object.assign(g.userData.doc, { title: d.title, summary: d.summary, to: d.to, file: d.file });
+    repaint(g.userData.paper.userData.tex, drawDoc(g.userData.doc));
+    if (moved && !g.userData.fly && !g.userData.glide) { g.userData.home = homeFor(g); goHome(g); }
+  }
+  live.onDesk = docs.filter((d) => d.visible && !d.userData.doc.state && !d.userData.atDirector).length;
+  live.withCrew = docs.filter((d) => d.visible && d.userData.atDirector).length;
+}
+async function syncNotes() {
+  const rows = await rest('/rest/v1/hq_brainstorm_notes?select=id,text,x,y,status&status=eq.open&order=created_at.asc&limit=60');
+  const ids = new Set(rows.map((r) => r.id));
+  const notes = sheets().filter((o) => o.userData.kind === 'note');
+  for (const g of notes) { const u = g.userData; if (u.id && !ids.has(u.id) && !(u.heldBy || u.fly || u.glide) && g.visible) { removeSheet(g); } }
+  for (const r of rows) if (!notes.some((g) => g.userData.id === r.id)) addNote(r.text, r.x, r.y, '', r.id);
+  live.notes = rows.length;
+}
+async function syncSales() {
+  const r = await rest('/rest/v1/hq_order_snapshots?select=checked_at,ok,order_count,orders_last_7_days,newest_order_at&business_id=eq.wb&order=checked_at.desc&limit=1');
+  lastSales = r && r[0] ? r[0] : null;
+  live.sales = lastSales ? (lastSales.ok ? `Fourthwall: ${lastSales.order_count} orders on record · ${lastSales.orders_last_7_days} in 7 days` : 'Fourthwall: the last order check failed') : '';
+}
+async function refreshCounts() {
+  const rows = await rest('/rest/v1/hq_ai_handoffs?select=goal,decision,status,decided_at&order=decided_at.desc.nullslast&limit=500');
+  live.counts = {
+    idea: live.notes,
+    draft: rows.filter((r) => !r.decision && ['draft', 'ready_for_review'].includes(r.status)).length,
+    revised: rows.filter((r) => r.decision === 'revise').length,
+    approved: rows.filter((r) => r.decision === 'approved').length,
+  };
+  live.trophies = rows.filter((r) => r.decision === 'approved').slice(0, 3).map((r) => r.goal);
+}
+async function syncBoardroom() {
+  const m = await rest('/rest/v1/hq_boardroom_messages?select=speaker,created_at&order=created_at.desc&limit=1');
+  const latest = m && m[0];
+  let sp = null;
+  if (latest && latest.speaker !== 'owner' && WHO[latest.speaker] && Date.now() - Date.parse(latest.created_at) < 45000) sp = WHO[latest.speaker];
+  if (sp !== speaker) setSpeaker(sp);
+  if (pendingNote) {
+    const pn = pendingNote;
+    const o = await rest(`/rest/v1/hq_boardroom_messages?select=message,created_at&speaker=eq.owner&created_at=gt.${encodeURIComponent(pn.since)}&order=created_at.asc&limit=1`);
+    if (o && o[0] && pendingNote === pn) {
+      pendingNote = null;
+      const note = String(o[0].message).slice(0, 2000);
+      await rest(`/rest/v1/hq_ai_handoffs?id=eq.${pn.id}`, { method: 'PATCH', body: { decision_note: note, updated_at: new Date().toISOString() }, prefer: 'return=minimal' });
+      showToast('Revision note saved', `${pn.title}: "${note.slice(0, 50)}${note.length > 50 ? '…' : ''}"`, false);
+    } else if (Date.now() - Date.parse(pn.since) > 15 * 60 * 1000) pendingNote = null;
+  }
+}
+function drawSales(c, w, h) {
+  panelBg(c, w, h, { radius: 0.05 });
+  c.textAlign = 'left'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.1}px ${SERIF}`; c.fillText('Fourthwall orders', w * 0.04, h * 0.15);
+  if (!live.ok) { c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.06}px ${SANS}`; c.fillText('Sign this headset in to see live numbers.', w * 0.04, h * 0.35); return; }
+  if (!lastSales) { c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.06}px ${SANS}`; c.fillText('No order check recorded yet.', w * 0.04, h * 0.35); return; }
+  c.fillStyle = '#9fd8a8'; c.font = `700 ${h * 0.045}px ${SANS}`; c.textAlign = 'right';
+  c.fillText(`● LIVE · checked ${new Date(lastSales.checked_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`, w * 0.96, h * 0.14);
+  c.textAlign = 'left';
+  const stat = (x, n, l) => { c.fillStyle = '#f3ede0'; c.font = `700 ${h * 0.24}px ${SERIF}`; c.fillText(String(n), x, h * 0.52); c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.05}px ${SANS}`; c.fillText(l, x, h * 0.62); };
+  if (lastSales.ok) { stat(w * 0.06, lastSales.order_count, 'orders on record'); stat(w * 0.4, lastSales.orders_last_7_days, 'in the last 7 days');
+    c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.05}px ${SANS}`;
+    c.fillText(lastSales.newest_order_at ? `Newest order ${new Date(lastSales.newest_order_at).toLocaleDateString()}` : 'No orders yet', w * 0.72, h * 0.45);
+  } else { c.fillStyle = '#efa27a'; c.font = `600 ${h * 0.07}px ${SANS}`; c.fillText('The last order check failed.', w * 0.06, h * 0.45); }
+  c.fillStyle = '#8f887a'; c.font = `500 ${h * 0.042}px ${SANS}`; c.fillText('Order counts from the automatic Fourthwall check — not revenue or profit.', w * 0.04, h * 0.88);
+}
+function drawPipeline(c, w, h) {
+  panelBg(c, w, h, { radius: 0.05 });
+  c.textAlign = 'left'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.11}px ${SERIF}`; c.fillText('Pipeline', w * 0.04, h * 0.17);
+  const k = live.ok && live.counts;
+  [['Ideas', k && k.idea], ['In review', k && k.draft], ['Revise', k && k.revised], ['Approved', k && k.approved]].forEach(([t, n], i) => {
+    const x = w * (0.04 + i * 0.24); c.fillStyle = '#1b1b1f'; rr(c, x, h * 0.28, w * 0.21, h * 0.5, 14); c.fill();
+    c.strokeStyle = '#c9a24a'; c.lineWidth = 2; c.stroke(); c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.075}px ${SANS}`; c.fillText(t, x + w * 0.015, h * 0.38);
+    c.fillStyle = '#f3ede0'; c.font = `700 ${h * 0.2}px ${SERIF}`; c.fillText(k ? String(n) : '—', x + w * 0.015, h * 0.66);
+  });
+  c.fillStyle = live.ok ? '#9fd8a8' : '#a59f92'; c.font = `500 ${h * 0.055}px ${SANS}`;
+  c.fillText(live.ok ? `● LIVE from Business HQ · ${live.updated}` : 'Sign this headset in to see live counts.', w * 0.04, h * 0.9);
+}
+function drawTrophies(c, w, h) {
+  panelBg(c, w, h, { radius: 0.08 });
+  c.textAlign = 'left'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.2}px ${SERIF}`; c.fillText('Recently approved', w * 0.05, h * 0.3);
+  c.fillStyle = '#e8dfc8'; c.font = `500 ${h * 0.13}px ${SANS}`;
+  const list = live.ok ? live.trophies : [];
+  if (!list.length) c.fillText(live.ok ? 'Drop work in Completed and it shows up here.' : 'Sign in to see approved work.', w * 0.05, h * 0.62);
+  list.forEach((t, i) => c.fillText('★ ' + String(t).slice(0, 52), w * 0.05, h * (0.55 + i * 0.16)));
+}
+function drawAll() {
+  if (welcomeCard) repaint(welcomeCard.userData.tex, drawWelcome);
+  if (salesCard) repaint(salesCard.userData.tex, drawSales);
+  if (pipeCard) repaint(pipeCard.userData.tex, drawPipeline);
+  if (trophyCard) repaint(trophyCard.userData.tex, drawTrophies);
+  const b = $('#liveBadge'); b.textContent = live.ok ? '● Live · Business HQ' : 'Not signed in'; b.style.color = live.ok ? '#9fd8a8' : '';
+}
+function clearLive() {
+  for (const g of [...docs]) removeSheet(g);
+  for (const g of sheets().filter((o) => o.userData.kind === 'note')) removeSheet(g);
+  Object.assign(live, { ok: false, onDesk: 0, withCrew: 0, notes: 0, sales: '', counts: null, trophies: [] }); lastSales = null; setSpeaker(null); drawAll();
+}
+let syncTick = 0, syncing = false;
+async function syncAll(full) {
+  if (syncing) return; syncing = true;
+  try {
+    if (!session() || !conf().U || !conf().K) { if (live.ok || docs.length) clearLive(); else drawAll(); return; }
+    await syncBoardroom();
+    if (full) { await Promise.all([syncDocs(), syncNotes(), syncSales()]); await refreshCounts(); }
+    const was = live.ok; live.ok = true; live.updated = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    if (full || !was) drawAll();
+  } catch (e) {
+    if (!session()) clearLive();
+  } finally { syncing = false; }
+}
+setInterval(() => { syncTick++; syncAll(syncTick % 7 === 0); }, 3000);
 
 // ================= frame loop =================
 const clock = new THREE.Clock();
@@ -1379,7 +1596,6 @@ buildDesk(BOARD_T, false);
 makeTray('revise', -0.85);
 makeTray('approve', 0.85);
 buildTrash();
-DOCS.forEach((d, i) => makeDoc(d, i));
 CREW.forEach(makeCrew);
 buildConsole();
 buildWelcome();
@@ -1390,6 +1606,7 @@ setupVRButton();
 teleport(STATIONS[0]);
 setSpeaker(null);
 updateAuthBadge();
+syncAll(true);
 renderer.setAnimationLoop(frame);
 </script>
 </body>
