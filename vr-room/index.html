@@ -680,13 +680,22 @@ function makeCrew(spec) {
 let speaker = null;
 const marker = new THREE.Group();
 {
-  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.045, 0), glowMat(GOLD_HI, 1)); gem.scale.set(1, 1.5, 1); marker.add(gem);
-  const halo = new THREE.Mesh(new THREE.RingGeometry(0.06, 0.07, 32), glowMat(GOLD_HI, 0.5)); halo.rotation.x = -PI / 2; halo.position.y = -0.09; marker.add(halo);
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.08, 0), glowMat(GOLD_HI, 1)); gem.scale.set(1, 1.5, 1); marker.add(gem);
+  const halo = new THREE.Mesh(new THREE.RingGeometry(0.11, 0.13, 40), glowMat(GOLD_HI, 0.6)); halo.rotation.x = -PI / 2; halo.position.y = -0.15; marker.add(halo);
   marker.visible = false; scene.add(marker);
 }
 const consoleButtons = [];
+const speakTex = canvasTex(1024, 220, () => {});
+const speakBanner = new THREE.Sprite(new THREE.SpriteMaterial({ map: speakTex, toneMapped: false, transparent: true, depthWrite: false }));
+speakBanner.scale.set(0.95, 0.2, 1); speakBanner.visible = false; scene.add(speakBanner);
+const speakFloor = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.5, 48), decal(glowMat(GOLD_HI, 0.85)));
+speakFloor.rotation.x = -PI / 2; speakFloor.visible = false; scene.add(speakFloor);
 function setSpeaker(name) {
   speaker = name || null;
+  if (speaker) repaint(speakTex, (c, w, h) => { panelBg(c, w, h, { radius: 0.3, fill: 'rgba(201,162,74,0.95)', stroke: '#f0d48a' }); c.textAlign = 'center'; c.fillStyle = '#16120a'; c.font = `700 ${h * 0.46}px ${SERIF}`; c.fillText(`${speaker} is speaking`, w / 2, h * 0.64); });
+  speakBanner.visible = speakFloor.visible = !!speaker;
+  const D = crew.find((x) => x.spec.name === speaker);
+  if (D) { speakFloor.position.set(D.g.position.x, 0.004, D.g.position.z); }
   document.querySelectorAll('#speakRow button').forEach((b) => b.classList.toggle('on', (b.dataset.sp || null) === speaker));
   consoleButtons.forEach((b) => b.userData.setOn((b.userData.sp || null) === speaker));
 }
@@ -726,6 +735,8 @@ function animateCrew(t, dt) {
     const tgt = S.head.getWorldPosition(V()).add(new THREE.Vector3(0, 0.32 + 0.025 * Math.sin(t * 2.5), 0));
     if (!marker.visible) { marker.position.copy(tgt); marker.visible = true; }
     marker.position.lerp(tgt, Math.min(1, dt * 6)); marker.rotation.y += dt * 1.6;
+    speakBanner.position.copy(marker.position).add(new THREE.Vector3(0, 0.22, 0));
+    speakFloor.material.opacity = 0.55 + 0.35 * Math.sin(t * 4);
   } else marker.visible = false;
 }
 
@@ -769,9 +780,8 @@ function drawWelcome(c, w, h) {
   wrap(c, 'Pick up: trigger or pinch. Closer/further: thumbstick or pull your hand. Point & let go to send. Grip or fist to crumple.', w * 0.06, h * 0.82, w * 0.88, h * 0.048, 3);
 }
 function buildWelcome() {
-  welcomeCard = labelPlane(0.5, 0.36, drawWelcome, { px: 2600 });
-  const [x, z] = polar(0.98, -0.66);
-  welcomeCard.position.set(x, DESK.y + 0.12, z); welcomeCard.rotation.set(0, faceCenter(x, z), 0); welcomeCard.rotateX(-0.75); scene.add(welcomeCard);
+  welcomeCard = labelPlane(1.45, 1.04, drawWelcome, { px: 900 });
+  welcomeCard.position.set(-2.7, 2.72, -5.95); scene.add(welcomeCard);
 }
 
 // ================= toast + undo =================
@@ -892,6 +902,7 @@ function glideTo(obj, kind, ref, point) {
   if (kind === 'director') to = ref.proxy.getWorldPosition(V());
   if (kind === 'tray') to = ref.g.localToWorld(new THREE.Vector3(0, 0.1, 0));
   if (kind === 'trash') to = new THREE.Vector3(trash.x, trash.top + 0.05, trash.z);
+  if (kind === 'shirt') to = apparel.proxy.getWorldPosition(V());
   obj.userData.glide = { from, to, t: 0, dur: clamp(from.distanceTo(to) * 0.35, 0.35, 0.9), kind, ref, point };
 }
 function finishGlide(obj, gl) {
@@ -900,10 +911,12 @@ function finishGlide(obj, gl) {
   if (gl.kind === 'tray') return intoTray(obj, gl.ref);
   if (gl.kind === 'trash') return intoTrash(obj);
   if (gl.kind === 'board') return stickToBoard(obj, gl.point);
+  if (gl.kind === 'shirt') { applyDesign(obj); return goHome(obj); }
 }
 // Release without a target: drop by position, or fly if thrown.
 function place(obj, vel) {
   const p = obj.getWorldPosition(V()), u = obj.userData;
+  if (u.kind === 'design') { if (apparel.proxy.getWorldPosition(V()).distanceTo(p) < 0.5) applyDesign(obj); return goHome(obj); }
   if (vel && vel.length() > 1.2) { scene.attach(obj); u.fly = { vel: vel.clone().multiplyScalar(1.1), spin: (Math.random() - 0.5) * 8 }; return; }
   if (u.kind === 'doc' || u.kind === 'note') {
     for (const t of trays) if (t.contains(p)) return intoTray(obj, t);
@@ -946,6 +959,168 @@ function stepFlight(obj, dt) {
   if (Math.abs(p.x) > 6.9) { p.x = Math.sign(p.x) * 6.9; f.vel.x *= -0.5; }
   if (p.z < -5.9) { p.z = -5.9; f.vel.z *= -0.5; }
   if (p.z > 4.85) { p.z = 4.85; f.vel.z *= -0.5; }
+}
+
+// ================= apparel corner =================
+// Designs come from your private Design Library (Business HQ storage, wb/designs).
+const apparel = { cards: [], names: new Set(), page: 0, color: '#1b1b1b', colorName: 'Black', side: 'front', size: 0.26, current: null, spin: 0, decals: [] };
+const SWATCHES = [['Black', '#1b1b1b'], ['White', '#f2f1ec'], ['Charcoal', '#3b3d42'], ['Heather', '#9a9a9a'], ['Navy', '#1f2a44'],
+  ['Military', '#4b5320'], ['Forest', '#2d4a33'], ['Brown', '#5a3b26'], ['Sand', '#cbb994'], ['Red', '#9e1b1e']];
+const PROFILE = [[0.0, 0], [0.14, 0], [0.155, 0.1], [0.145, 0.25], [0.165, 0.4], [0.2, 0.5], [0.19, 0.56], [0.085, 0.61], [0.05, 0.66], [0.0, 0.68]];
+function profileR(y) {
+  for (let i = 1; i < PROFILE.length; i++) { const [r1, y1] = PROFILE[i - 1], [r2, y2] = PROFILE[i]; if (y <= y2) return r1 + (r2 - r1) * (y - y1) / Math.max(1e-6, y2 - y1); }
+  return 0;
+}
+let binderPanel, shirtLabel;
+function buildApparel(g) {
+  // pedestal + shirt form
+  const base = new THREE.Group(); base.position.set(0.3, 0, -1.35); g.add(base);
+  const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.34, 0.12, 40), MAT.leather); ped.position.y = 0.06; base.add(ped);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.335, 0.008, 6, 48), MAT.gold); rim.rotation.x = PI / 2; rim.position.y = 0.12; base.add(rim);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.85, 12), MAT.gold); pole.position.y = 0.55; base.add(pole);
+  const shirt = new THREE.Group(); shirt.position.y = 0.95; base.add(shirt); apparel.shirt = shirt;
+  apparel.mat = std(0x1b1b1b, 0.88, 0.0, 0.25, { side: THREE.DoubleSide });
+  const wrapG = new THREE.Group(); wrapG.scale.set(1.15, 1, 0.62); shirt.add(wrapG); apparel.wrap = wrapG;
+  const bodyMesh = new THREE.Mesh(new THREE.LatheGeometry(PROFILE.map(([r, y]) => new THREE.Vector2(r * 1.02, y)), 48), apparel.mat);
+  wrapG.add(bodyMesh); register(bodyMesh, 'spinner', bodyMesh);
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.062, 0.012, 8, 32), apparel.mat); collar.rotation.x = PI / 2; collar.position.y = 0.61; wrapG.add(collar);
+  for (const s of [-1, 1]) {
+    const sl = new THREE.Mesh(new THREE.CylinderGeometry(0.066, 0.08, 0.2, 24, 1, true), apparel.mat);
+    sl.position.set(s * 0.245, 0.49, 0); sl.rotation.z = s * 1.15; sl.scale.z = 0.8; shirt.add(sl); register(sl, 'spinner', sl);
+  }
+  apparel.proxy = addTarget(new THREE.Mesh(new THREE.SphereGeometry(0.36, 12, 8), ghostMat), 'shirt', null);
+  apparel.proxy.position.y = 1.3; base.add(apparel.proxy);
+
+  // design binder (left)
+  const binder = new THREE.Group(); binder.position.set(-0.62, 1.22, -1.25); binder.rotation.set(-0.12, 0.25, 0); g.add(binder); apparel.binder = binder;
+  binderPanel = labelPlane(0.82, 0.7, drawBinder, { px: 1400 }); binder.add(binderPanel);
+  box(0.84, 0.012, 0.02, MAT.gold, 0, 0.356, 0, binder); box(0.84, 0.012, 0.02, MAT.gold, 0, -0.356, 0, binder);
+  const prev = makeButton(0.12, 0.06, '◀', () => { apparel.page = Math.max(0, apparel.page - 1); layoutCards(); drawBinder(); }, { parent: binder }); prev.position.set(-0.3, -0.29, 0.01);
+  const next = makeButton(0.12, 0.06, '▶', () => { apparel.page = Math.min(pageCount() - 1, apparel.page + 1); layoutCards(); drawBinder(); }, { parent: binder }); next.position.set(0.3, -0.29, 0.01);
+
+  // shirt controls (right)
+  const ctl = new THREE.Group(); ctl.position.set(1.0, 1.02, -1.05); ctl.rotation.set(0, -0.45, 0); g.add(ctl);
+  const tilt = new THREE.Group(); tilt.rotation.x = -0.35; ctl.add(tilt);
+  shirtLabel = labelPlane(0.62, 0.11, drawShirtLabel, { px: 1800 }); shirtLabel.position.y = 0.2; tilt.add(shirtLabel);
+  SWATCHES.forEach(([name, hex], i) => {
+    const b = makeSwatch(name, hex); b.position.set(-0.24 + (i % 5) * 0.12, 0.07 - Math.floor(i / 5) * 0.11, 0); tilt.add(b);
+  });
+  [['Front / Back', () => { apparel.side = apparel.side === 'front' ? 'back' : 'front'; apparel.spin = apparel.side === 'back' ? PI : 0; updateDecal(); drawShirtLabel(); }],
+   ['Print −', () => { apparel.size = clamp(apparel.size - 0.03, 0.12, 0.38); updateDecal(); drawShirtLabel(); }],
+   ['Print +', () => { apparel.size = clamp(apparel.size + 0.03, 0.12, 0.38); updateDecal(); drawShirtLabel(); }],
+   ['Auto spin', () => { apparel.autoSpin = !apparel.autoSpin; }],
+   ['Clear', () => { apparel.current = null; updateDecal(); drawShirtLabel(); }]].forEach(([label, fn], i) => {
+    const b = makeButton(0.115, 0.06, label, fn); b.position.set(-0.24 + i * 0.12, -0.17, 0); b.scale.setScalar(1); tilt.add(b);
+  });
+  drawBinder();
+}
+function makeSwatch(name, hex) {
+  const draw = (c, w, h, on) => {
+    c.clearRect(0, 0, w, h);
+    c.beginPath(); c.arc(w / 2, h * 0.4, h * 0.3, 0, PI * 2); c.fillStyle = hex; c.fill();
+    c.lineWidth = h * (on ? 0.07 : 0.035); c.strokeStyle = on ? '#f0d48a' : '#c9a24a'; c.stroke();
+    c.fillStyle = '#e8dfc8'; c.font = `600 ${h * 0.17}px ${SANS}`; c.textAlign = 'center'; c.fillText(name, w / 2, h * 0.92);
+  };
+  const m = labelPlane(0.1, 0.1, (c, w, h) => draw(c, w, h, name === apparel.colorName), { px: 2400 });
+  m.userData.redraw = () => repaint(m.userData.tex, (c, w, h) => draw(c, w, h, name === apparel.colorName));
+  apparel.swatches = (apparel.swatches || []).concat(m);
+  return register(m, 'button', m, { onPress: () => { apparel.color = hex; apparel.colorName = name; apparel.mat.color.set(hex); apparel.swatches.forEach((s) => s.userData.redraw()); drawShirtLabel(); } });
+}
+const pageCount = () => Math.max(1, Math.ceil(apparel.cards.length / 6));
+function drawBinder(c, w, h) {
+  if (!c) { if (binderPanel) repaint(binderPanel.userData.tex, drawBinder); return; }
+  c.fillStyle = '#0e0e10'; c.fillRect(0, 0, w, h);
+  c.strokeStyle = '#c9a24a'; c.lineWidth = 4; c.strokeRect(6, 6, w - 12, h - 12);
+  c.textAlign = 'left'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.07}px ${SERIF}`; c.fillText('Design Binder', w * 0.04, h * 0.1);
+  c.textAlign = 'right'; c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.04}px ${SANS}`;
+  c.fillText(apparel.cards.length ? `${apparel.cards.length} designs · page ${apparel.page + 1} of ${pageCount()}` : '', w * 0.96, h * 0.1);
+  if (!apparel.cards.length) {
+    c.textAlign = 'center'; c.fillStyle = '#e8dfc8'; c.font = `500 ${h * 0.05}px ${SANS}`;
+    c.fillText(live.ok ? 'No designs yet.' : 'Sign this headset in to load your designs.', w / 2, h * 0.42);
+    c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.042}px ${SANS}`;
+    c.fillText('Add them on your phone:', w / 2, h * 0.52); c.fillStyle = '#e6c878'; c.fillText('workingbonesoutfitters.github.io/Hq/designs', w / 2, h * 0.6);
+  }
+  c.textAlign = 'center'; c.fillStyle = '#8f887a'; c.font = `500 ${h * 0.035}px ${SANS}`; c.fillText('Grab a design · drop it on the shirt · grab the shirt to spin it', w / 2, h * 0.97);
+}
+function drawShirtLabel(c, w, h) {
+  if (!c) { if (shirtLabel) repaint(shirtLabel.userData.tex, drawShirtLabel); return; }
+  panelBg(c, w, h, { radius: 0.2 });
+  c.textAlign = 'left'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.32}px ${SERIF}`;
+  c.fillText(apparel.current ? apparel.current.label.slice(0, 30) : 'Shirt preview', w * 0.04, h * 0.45);
+  c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.2}px ${SANS}`;
+  c.fillText(`${apparel.colorName} tee · ${apparel.side} print · ${Math.round(apparel.size * 100)} cm tall · common tee colours`, w * 0.04, h * 0.8);
+}
+function updateDecal() {
+  for (const m of apparel.decals) { m.parent.remove(m); m.geometry.dispose(); m.material.dispose(); }
+  apparel.decals = [];
+  const d = apparel.current; if (!d || !apparel.wrap) return;
+  const H = apparel.size, W = H * d.aspect, yC = 0.36;
+  const rTop = profileR(yC + H / 2) * 1.02 + 0.006, rBot = profileR(yC - H / 2) * 1.02 + 0.006, rMid = (rTop + rBot) / 2;
+  const theta = clamp(W / (rMid * 1.15), 0.2, 2.6), start = (apparel.side === 'front' ? 0 : PI) - theta / 2;
+  const mat = decal(new THREE.MeshStandardMaterial({ map: d.tex, transparent: true, roughness: 0.85, metalness: 0, envMapIntensity: 0.25 }));
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, H, 40, 1, true, start, theta), mat);
+  m.position.y = yC; apparel.wrap.add(m); apparel.decals.push(m);
+}
+function applyDesign(card) {
+  apparel.current = card.userData.design; updateDecal(); drawShirtLabel();
+  showToast(`On the shirt: ${apparel.current.label}`, `${apparel.colorName} tee · ${apparel.side} print. Try other colours with the swatches.`, false);
+}
+function layoutCards() {
+  apparel.page = Math.min(apparel.page, pageCount() - 1);
+  apparel.cards.forEach((g, i) => {
+    const u = g.userData, onPage = Math.floor(i / 6) === apparel.page;
+    const k = i % 6, lp = new THREE.Vector3(-0.25 + (k % 3) * 0.25, 0.12 - Math.floor(k / 3) * 0.25, 0.014);
+    u.home = { p: apparel.binder.localToWorld(lp), q: apparel.binder.getWorldQuaternion(new THREE.Quaternion()) };
+    if (u.heldBy || u.fly || u.glide) return;
+    g.visible = onPage; if (onPage) goHome(g);
+  });
+}
+function removeDesignCard(g) {
+  for (let i = hitables.length - 1; i >= 0; i--) if (hitables[i].userData.owner === g) hitables.splice(i, 1);
+  const i = apparel.cards.indexOf(g); if (i >= 0) apparel.cards.splice(i, 1);
+  if (g.parent) g.parent.remove(g);
+  g.userData.design.tex.dispose();
+}
+function makeDesignCard(d) {
+  const g = new THREE.Group(); g.userData = { kind: 'design', design: d };
+  const paper = labelPlane(0.22, 0.22, (c, w, h) => {
+    c.fillStyle = '#16161a'; c.fillRect(0, 0, w, h);
+    const s = Math.min((w * 0.9) / d.cv.width, (h * 0.8) / d.cv.height), dw = d.cv.width * s, dh = d.cv.height * s;
+    c.drawImage(d.cv, (w - dw) / 2, h * 0.03, dw, dh);
+    c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.065}px ${SANS}`; c.textAlign = 'center'; c.fillText(d.label.slice(0, 26), w / 2, h * 0.95);
+  }, { px: 2400, transparent: false, side: THREE.DoubleSide });
+  decal(paper.material); g.add(paper); g.userData.paper = paper;
+  equipSheet(g, 0.22, 0.22, MAT.paperBall);
+  register(paper, 'design', g); scene.add(g);
+  apparel.cards.push(g); apparel.cards.sort((a, b) => a.userData.design.name.localeCompare(b.userData.design.name));
+  layoutCards(); drawBinder();
+}
+async function fetchDesign(name, retry = true) {
+  const s = session(), { U, K } = conf();
+  const r = await fetch(`${U}/storage/v1/object/authenticated/hq-documents/wb/designs/${encodeURIComponent(name)}`, { headers: { apikey: K, Authorization: 'Bearer ' + s.at } });
+  if ((r.status === 401 || r.status === 403 || r.status === 400) && retry && await refreshSession()) return fetchDesign(name, false);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.blob();
+}
+async function loadDesign(name) {
+  try {
+    const bmp = await createImageBitmap(await fetchDesign(name));
+    const sc = Math.min(1, 1024 / Math.max(bmp.width, bmp.height));
+    const cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(bmp.width * sc)); cv.height = Math.max(1, Math.round(bmp.height * sc));
+    cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height); if (bmp.close) bmp.close();
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = maxAniso;
+    makeDesignCard({ name, tex, cv, aspect: cv.width / cv.height, label: name.replace(/\.(png|jpe?g)$/i, '').replace(/[-_]+/g, ' ') });
+  } catch (e) { apparel.names.delete(name); }
+}
+async function loadDesigns() {
+  const list = (await rest('/storage/v1/object/list/hq-documents', { method: 'POST', body: { prefix: 'wb/designs', limit: 200, offset: 0, sortBy: { column: 'name', order: 'asc' } } }) || [])
+    .filter((f) => f.name && /\.(png|jpe?g)$/i.test(f.name));
+  const names = new Set(list.map((f) => f.name));
+  for (const g of [...apparel.cards]) { const u = g.userData; if (!names.has(u.design.name) && !(u.heldBy || u.fly || u.glide)) { apparel.names.delete(u.design.name); if (apparel.current === u.design) { apparel.current = null; updateDecal(); } removeDesignCard(g); } }
+  const todo = list.filter((f) => !apparel.names.has(f.name));
+  todo.forEach((f) => apparel.names.add(f.name));
+  for (const f of todo) await loadDesign(f.name);
+  layoutCards(); drawBinder(); drawShirtLabel();
 }
 
 // ================= stations =================
@@ -1003,16 +1178,8 @@ function buildStations() {
     for (const [pg, x, ry] of [[Lp, -0.125, 0.04], [Rp, 0.125, -0.04]]) { decal(pg.material); pg.rotation.set(-PI / 2, ry, 0); pg.position.set(x, 0.012, 0); top.add(pg); }
     infoCard(g, 0.8, 0.3, 'Book Stand', ['Your book pages load here once the page images are in Business HQ storage.'], 0, 1.62, -1.3, -0.1);
   }
-  // Apparel corner
-  {
-    const g = stationGroup(STATIONS[3]);
-    const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.34, 0.12, 40), MAT.leather); ped.position.set(0, 0.06, -1.4); g.add(ped);
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.335, 0.008, 6, 48), MAT.gold); rim.rotation.x = PI / 2; rim.position.set(0, 0.12, -1.4); g.add(rim);
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.85, 12), MAT.gold); pole.position.set(0, 0.55, -1.4); g.add(pole);
-    const pts = [[0.0, 0], [0.14, 0], [0.155, 0.1], [0.145, 0.25], [0.165, 0.4], [0.2, 0.5], [0.19, 0.56], [0.085, 0.61], [0.05, 0.66], [0.0, 0.68]].map(([r, y]) => new THREE.Vector2(r, y));
-    const form = new THREE.Mesh(new THREE.LatheGeometry(pts, 32), MAT.form); form.scale.set(1, 1, 0.62); form.position.set(0, 0.97, -1.4); g.add(form);
-    infoCard(g, 0.8, 0.3, 'Apparel Corner', ['Design binder, Fourthwall colour swatches and a real shirt are next. Send Claude a couple of design files.'], 0.75, 1.5, -1.3, 0);
-  }
+  // Apparel corner: design binder, shirt, colours
+  buildApparel(stationGroup(STATIONS[3]));
   // Brainstorm wall
   {
     const g = stationGroup(STATIONS[4]);
@@ -1041,7 +1208,7 @@ function buildStations() {
     holoScan = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 1.0), new THREE.MeshBasicMaterial({ map: scanTex, transparent: true, opacity: 0.35, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending }));
     holoScan.position.set(0, 2.15, -2.255); g.add(holoScan);
     const pipe = labelPlane(1.7, 0.7, drawPipeline, { px: 1100 }); pipeCard = pipe;
-    pipe.position.set(-2.7, 1.75, -2.26); g.add(pipe);
+    pipe.position.set(-2.7, 1.55, -2.26); g.add(pipe);
     for (const y of [1.25, 1.85]) { box(1.6, 0.03, 0.25, MAT.leather, 2.7, y, -2.16, g); box(1.6, 0.008, 0.252, MAT.gold, 2.7, y + 0.02, -2.16, g); }
     for (let i = 0; i < 3; i++) { const pl = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.06, 20), MAT.gold); pl.position.set(2.25 + i * 0.45, 1.3, -2.16); g.add(pl); }
     trophyCard = labelPlane(1.5, 0.32, drawTrophies, { px: 1300 }); trophyCard.position.set(2.7, 2.3, -2.26); g.add(trophyCard);
@@ -1062,7 +1229,7 @@ function teleport(st) {
 const raycaster = new THREE.Raycaster();
 const tmpMat = new THREE.Matrix4();
 const controllers = [];
-let twoHand = null, resize = null;
+let twoHand = null, resize = null, spinGrab = null;
 const targetGlow = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.012, 8, 48), glowMat(GOLD_HI, 0.9));
 targetGlow.visible = false; scene.add(targetGlow);
 function setupXRInput() {
@@ -1129,6 +1296,7 @@ function release(c) {
   if (twoHand && (twoHand.b === c)) { twoHand = null; return; }
   if (twoHand && twoHand.a === c) twoHand = null;
   if (resize && resize.c === c) { resize = null; return; }
+  if (spinGrab && spinGrab.c === c) { spinGrab = null; return; }
   const obj = c.userData.held; if (!obj) return;
   const tgt = c.userData.aim;
   const vel = trailVelocity(c);
@@ -1146,6 +1314,7 @@ function activate(hit, c) {
   const o = hit.object, kind = o.userData.kind;
   if (kind === 'button') { o.userData.onPress(); return null; }
   if (kind === 'ring') { teleport(o.userData.station); return null; }
+  if (kind === 'spinner') { if (c) { aimRay(c); spinGrab = { c, a0: Math.atan2(raycaster.ray.direction.x, raycaster.ray.direction.z), s0: apparel.spin }; apparel.autoSpin = false; } return null; }
   if (kind === 'handle' && c) {
     const obj = o.userData.owner;
     resize = { c, obj, dist: hit.distance, center: obj.getWorldPosition(V()), r0: Math.max(0.02, hit.point.distanceTo(obj.getWorldPosition(V()))), s0: obj.scale.x };
@@ -1197,7 +1366,8 @@ function updateXR(dt) {
       const now = performance.now(); u.trail.push({ p: held.getWorldPosition(V()), t: now }); while (u.trail.length && now - u.trail[0].t > 100) u.trail.shift();
       // what are you pointing at? (director, box, trash, board)
       const tg = aimTarget(c);
-      u.aim = tg && !(tg.kind === 'board' && held.userData.kind !== 'note') ? tg : null;
+      const hk = held.userData.kind;
+      u.aim = tg && (tg.kind === 'board' ? hk === 'note' : tg.kind === 'shirt' ? hk === 'design' : hk !== 'design') ? tg : null;
       if (u.aim) {
         const p = u.aim.kind === 'board' ? u.aim.point : u.aim.obj.getWorldPosition(V());
         targetGlow.position.copy(p); targetGlow.visible = true; targetGlow.lookAt(headPos());
@@ -1207,6 +1377,11 @@ function updateXR(dt) {
       continue;
     }
     if (Math.abs(sx) > 0.7 && snapCooldown === 0) { snapTurn(sx > 0 ? -PI / 6 : PI / 6); snapCooldown = 0.35; }
+    if (spinGrab && spinGrab.c === c) {
+      aimRay(c); let da = Math.atan2(raycaster.ray.direction.x, raycaster.ray.direction.z) - spinGrab.a0;
+      if (da > PI) da -= 2 * PI; if (da < -PI) da += 2 * PI;
+      apparel.spin = spinGrab.s0 + da * 4; u.line.scale.z = 1.5; continue;
+    }
     if (resize && resize.c === c) {
       aimRay(c); const p = raycaster.ray.at(resize.dist, V());
       resize.obj.scale.setScalar(clamp(resize.s0 * p.distanceTo(resize.center) / resize.r0, 0.4, 5));
@@ -1239,7 +1414,8 @@ canvas.addEventListener('pointerdown', (e) => {
   const hit = pointerHit(e);
   drag = { x: e.clientX, y: e.clientY, moved: 0, hit, obj: null, plane: null };
   const k = hit && hit.object.userData.kind;
-  if (k === 'doc' || k === 'note') {
+  if (k === 'spinner') { drag.spin = apparel.spin; apparel.autoSpin = false; }
+  if (k === 'doc' || k === 'note' || k === 'design') {
     const obj = hit.object.userData.owner; obj.userData.fly = obj.userData.glide = null; clearState(obj);
     drag.obj = obj; setGlow(obj, true); hideToast();
     const wp = obj.getWorldPosition(V());
@@ -1255,6 +1431,7 @@ canvas.addEventListener('pointermove', (e) => {
   if (renderer.xr.isPresenting) return;
   if (!drag) { canvas.style.cursor = pointerHit(e) ? 'pointer' : 'grab'; return; }
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.moved += Math.abs(dx) + Math.abs(dy); drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.spin != null) { apparel.spin += dx * 0.012; return; }
   if (drag.obj) {
     const r = canvas.getBoundingClientRect();
     ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -1476,7 +1653,7 @@ async function syncBoardroom() {
   const m = await rest('/rest/v1/hq_boardroom_messages?select=speaker,created_at&order=created_at.desc&limit=1');
   const latest = m && m[0];
   let sp = null;
-  if (latest && latest.speaker !== 'owner' && WHO[latest.speaker] && Date.now() - Date.parse(latest.created_at) < 45000) sp = WHO[latest.speaker];
+  if (latest && latest.speaker !== 'owner' && WHO[latest.speaker] && Date.now() - Date.parse(latest.created_at) < 180000) sp = WHO[latest.speaker];
   if (sp !== speaker) setSpeaker(sp);
   if (pendingNote) {
     const pn = pendingNote;
@@ -1534,15 +1711,17 @@ function drawAll() {
 function clearLive() {
   for (const g of [...docs]) removeSheet(g);
   for (const g of sheets().filter((o) => o.userData.kind === 'note')) removeSheet(g);
+  for (const g of [...apparel.cards]) removeDesignCard(g);
+  apparel.names.clear(); apparel.current = null; if (apparel.wrap) { updateDecal(); drawBinder(); drawShirtLabel(); }
   Object.assign(live, { ok: false, onDesk: 0, withCrew: 0, notes: 0, sales: '', counts: null, trophies: [] }); lastSales = null; setSpeaker(null); drawAll();
 }
-let syncTick = 0, syncing = false;
+let syncTick = 0, syncing = false, designsBusy = false;
 async function syncAll(full) {
   if (syncing) return; syncing = true;
   try {
     if (!session() || !conf().U || !conf().K) { if (live.ok || docs.length) clearLive(); else drawAll(); return; }
     await syncBoardroom();
-    if (full) { await Promise.all([syncDocs(), syncNotes(), syncSales()]); await refreshCounts(); }
+    if (full) { await Promise.all([syncDocs(), syncNotes(), syncSales()]); await refreshCounts(); if (!designsBusy) { designsBusy = true; loadDesigns().catch(() => {}).finally(() => { designsBusy = false; }); } }
     const was = live.ok; live.ok = true; live.updated = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     if (full || !was) drawAll();
   } catch (e) {
@@ -1554,7 +1733,7 @@ setInterval(() => { syncTick++; syncAll(syncTick % 7 === 0); }, 3000);
 // ================= frame loop =================
 const clock = new THREE.Clock();
 let hovered = new Set();
-const sheets = () => [...docs, ...board.children.filter((o) => o.userData && o.userData.kind === 'note'), ...scene.children.filter((o) => o.userData && o.userData.kind === 'note')];
+const sheets = () => [...apparel.cards, ...docs, ...board.children.filter((o) => o.userData && o.userData.kind === 'note'), ...scene.children.filter((o) => o.userData && o.userData.kind === 'note')];
 function frame() {
   const dt = Math.min(0.05, clock.getDelta()), t = clock.elapsedTime, presenting = renderer.xr.isPresenting;
   const newHover = presenting ? updateXR(dt) : new Set();
@@ -1562,13 +1741,13 @@ function frame() {
     const k = o.userData.kind;
     if (k === 'button') o.scale.setScalar(1);
     if (k === 'ring') o.userData.ring.scale.setScalar(1);
-    if (k === 'doc' || k === 'note') setGlow(o.userData.owner, !!o.userData.owner.userData.heldBy);
+    if (k === 'doc' || k === 'note' || k === 'design') setGlow(o.userData.owner, !!o.userData.owner.userData.heldBy);
   }
   for (const o of newHover) {
     const k = o.userData.kind;
     if (k === 'button') o.scale.setScalar(1.08);
     if (k === 'ring') o.userData.ring.scale.setScalar(1.15);
-    if (k === 'doc' || k === 'note' || k === 'handle') setGlow(o.userData.owner, true);
+    if (k === 'doc' || k === 'note' || k === 'design' || k === 'handle') setGlow(o.userData.owner, true);
   }
   hovered = newHover;
 
@@ -1584,6 +1763,8 @@ function frame() {
   trash.flash = Math.max(0, trash.flash - dt); trash.glow.material.opacity = 0.9 * Math.min(1, trash.flash);
   for (const s of ships) { s.position.x += s.userData.speed * s.userData.dir * dt; if (Math.abs(s.position.x) > 9.5) s.position.x = -9.5 * s.userData.dir; }
   if (holoScan) holoScan.material.map.offset.y = (t * 0.06) % 1;
+  if (apparel.autoSpin) apparel.spin += dt * 0.7;
+  if (apparel.shirt) apparel.shirt.rotation.y = lerp(apparel.shirt.rotation.y, apparel.spin, Math.min(1, dt * 4));
   if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) hideToast(); }
   toast3d.visible = presenting && toastTimer > 0;
   animateCrew(t, dt);
