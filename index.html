@@ -2,10 +2,11 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://*.supabase.co; img-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://*.supabase.co; img-src 'self' data:; manifest-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Business HQ">
-<title>Business HQ · Gold Edition · Boardroom v4.0</title>
+<title>Business HQ · Gold Edition · v4.1</title>
 <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=3">
+<link rel="manifest" href="./manifest.webmanifest">
 <style>
 :root{--bg:#f5f3ee;--card:#fff;--tx:#1d1d1b;--mu:#6b6a64;--ln:#e2dfd6;--ac:#c2410c;--ok:#15803d;--wa:#b45309;--bad:#b91c1c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141413;--card:#1f1f1d;--tx:#f1efe8;--mu:#a09e95;--ln:#33322e;--ac:#fb923c;--ok:#4ade80;--wa:#fbbf24;--bad:#f87171}}
@@ -361,7 +362,7 @@ function ownerSnapshot(){
 function home(){
  const L=D.tasks.filter(t=>t.business==biz), A=D.apprs.filter(a=>a.business==biz);
  const done=L.filter(t=>t.status==="done").length,active=L.filter(t=>["queued","claimed","running","approved"].includes(t.status)).length;
- return BIZ()+`<div class="hero"><div class="eyebrow">THE EXECUTIVE SUITE</div><h2>${esc(BN[biz]||"Choose a business")}</h2><p>Everything important, in one place.</p></div><div class="statgrid">${stat("Tasks",L.length,"Total tracked")}${stat("Needs approval",A.length,"Waiting for you")}${stat("In progress",active,"Queued or active")}${stat("Completed",done,"Finished tasks")}</div>${pulseCard()}${ownerSnapshot()}${empireOverview()}<h2>Choose a department</h2><div class="quickgrid"><button class="quick" data-a="tab|manager"><div class="symbol">✧</div><strong>AI Manager</strong><span>Give instructions</span></button><button class="quick" data-a="tab|marketing"><div class="symbol">✦</div><strong>Marketing</strong><span>Create campaigns</span></button><button class="quick" data-a="tab|team"><div class="symbol">◇</div><strong>AI Team</strong><span>View departments</span></button><button class="quick" data-a="tab|appr"><div class="symbol">✓</div><strong>Approvals</strong><span>Review decisions</span></button></div><div class="card" style="margin-top:16px"><b><span class="statusdot"></span>Integration status</b><p class="mutedline">Fourthwall reporting is available to the signed-in owner; check Reports for its current status. Claude and Grok are manual handoffs, not connected services. No automatic AI work, publishing, spending or advertising is enabled. No background work runs when the page is closed.</p></div>`;
+ return BIZ()+`<div class="hero"><div class="eyebrow">THE EXECUTIVE SUITE</div><h2>${esc(BN[biz]||"Choose a business")}</h2><p>Everything important, in one place.</p></div><div class="statgrid">${stat("Tasks",L.length,"Total tracked")}${stat("Needs approval",A.length,"Waiting for you")}${stat("In progress",active,"Queued or active")}${stat("Completed",done,"Finished tasks")}</div>${pulseCard()}${toolsCard()}${ownerSnapshot()}${empireOverview()}<h2>Choose a department</h2><div class="quickgrid"><button class="quick" data-a="tab|manager"><div class="symbol">✧</div><strong>AI Manager</strong><span>Give instructions</span></button><button class="quick" data-a="tab|marketing"><div class="symbol">✦</div><strong>Marketing</strong><span>Create campaigns</span></button><button class="quick" data-a="tab|team"><div class="symbol">◇</div><strong>AI Team</strong><span>View departments</span></button><button class="quick" data-a="tab|appr"><div class="symbol">✓</div><strong>Approvals</strong><span>Review decisions</span></button></div><div class="card" style="margin-top:16px"><b><span class="statusdot"></span>Integration status</b><p class="mutedline">Fourthwall reporting is available to the signed-in owner; check Reports for its current status. Claude and Grok are manual handoffs, not connected services. No automatic AI work, publishing, spending or advertising is enabled. No background work runs when the page is closed.</p></div>`;
 }
 {const hqBaseLoad=load;let hqPulseAt=0;load=async function(){await hqBaseLoad();if(S&&unlocked&&!demo&&Date.now()-hqPulseAt>3e5){hqPulseAt=Date.now();loadPostStatus();loadOrderSnap()}}}
 // Boardroom preview: only read existing RLS-protected records. No paid AI calls.
@@ -654,6 +655,12 @@ async function loadOrderSnap(){
   orderSnap=r.ok&&Array.isArray(r.j)?{loaded:true,loading:false,error:"",row:r.j[0]||null}:{loaded:true,loading:false,error:"Order check unavailable",row:null};
  }catch(e){orderSnap={loaded:true,loading:false,error:"Could not reach order check",row:null}}
  if(tab==="home")render();
+}
+// Tools (v4.1): one-tap links to the hub pages (launch checklist, what's selling,
+// documents, health & backups, notifications, VR office).
+function toolsCard(){
+ const t=(h,s,l)=>`<a class="quick" href="hub/#${h}" style="text-decoration:none"><div class="symbol">${s}</div><strong>${l}</strong></a>`;
+ return `<div class="card"><div class="eyebrow">TOOLS</div><div class="quickgrid" style="margin-top:8px">${biz==="fb"?t("launch","✓","Launch checklist"):t("selling","▲","What's selling")}${t("docs","▤","Documents")}${t("health","♥","Health &amp; backups")}${t("home","☰","All tools")}</div></div>`;
 }
 function pulseCard(){
  const when=d=>{try{return new Date(d).toLocaleString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}catch(e){return ""}};

@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Business HQ">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://*.supabase.co; img-src 'self' blob: data:; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<title>Tools · Business HQ</title>
+<style>
+:root{--gold:#c9a24a;--gold2:#e6c878;--text:#f3ede0;--muted:#a59f92;--bad:#ef8f7a;--good:#9fd49a;--card:#111113;--ln:rgba(201,162,74,.38)}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:#050506;color:var(--text);font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;padding:max(18px,env(safe-area-inset-top)) 16px max(40px,env(safe-area-inset-bottom))}
+main{max-width:760px;margin:0 auto}
+a{color:var(--gold2)}
+h1{font:600 26px Georgia,serif;color:var(--gold2);margin:8px 0 4px}
+h2{font:600 19px Georgia,serif;color:var(--gold2);margin:22px 0 8px}
+p{margin:0 0 12px}.mu{color:var(--muted)}.sm{font-size:13px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.card{background:var(--card);border:1px solid var(--ln);border-radius:18px;padding:16px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.tile{display:flex;flex-direction:column;gap:2px;background:var(--card);border:1px solid var(--ln);border-radius:16px;padding:14px;text-decoration:none;color:var(--text);min-height:96px}
+.tile b{color:var(--gold2);font-size:16px}.tile span{color:var(--muted);font-size:13px}.tile i{font-style:normal;font-size:22px;color:var(--gold)}
+button,select,input,textarea{font:inherit;font-size:15px;color:var(--text);background:#17171a;border:1px solid #2f2f35;border-radius:11px;padding:9px 12px;min-height:42px}
+button{cursor:pointer}button.pri{background:linear-gradient(#d8b25c,#b88d34);color:#16120a;border-color:#e6c878;font-weight:700}
+button:disabled{opacity:.5}
+textarea,input[type=text],select{width:100%}
+label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-block;font-size:12px;padding:2px 9px;border-radius:999px;border:1px solid #3a3a40;color:var(--muted);margin-right:4px}
+.chip.gold{border-color:var(--gold);color:var(--gold2)}.chip.bad{border-color:#7a3a30;color:var(--bad)}.chip.good{border-color:#3d6a3a;color:var(--good)}
+.bar{height:8px;border-radius:4px;background:#222;overflow:hidden;margin:8px 0}.bar i{display:block;height:100%;background:var(--gold)}
+.step{border-top:1px solid #222;padding:12px 0}.step:first-child{border-top:0}
+.step.done .t{color:var(--muted);text-decoration:line-through}
+.seg{display:flex;gap:4px;margin-top:8px}.seg button{flex:1;min-height:36px;font-size:13px;padding:4px}
+.seg button.on{background:#2a2312;border-color:var(--gold);color:var(--gold2);font-weight:700}
+.msg{font-size:14px;min-height:18px;margin-top:8px}.ok{color:var(--good)}.err{color:var(--bad)}
+table{width:100%;border-collapse:collapse;font-size:14px}td,th{text-align:left;padding:7px 4px;border-top:1px solid #222}th{color:var(--muted);font-weight:500;font-size:12px}td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.big{font:600 30px Georgia,serif;color:var(--gold2)}
+.pick{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:84px;border:2px dashed var(--ln);border-radius:14px;cursor:pointer;text-align:center;padding:12px;color:var(--gold2)}
+input[type=file]{display:none}
+.doc{border-top:1px solid #222;padding:12px 0}.doc:first-child{border-top:0}
+</style>
+</head>
+<body>
+<main>
+<div class="top"><a href="../">← Business HQ</a><a href="#" id="homeLink">All tools</a></div>
+<div id="app"></div>
+</main>
+<script>
+const LS={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
+const U=LS.get("hq_url")||"",K=LS.get("hq_key")||"";let S=null;try{S=JSON.parse(LS.get("hq_sess"))}catch(e){}
+const VAPID="BK4htXzKCiir-8phhLzR80F4A5su6ppQ9jJsx6PY6oYpBKuvhmSWRLYnY1kViOkGhtq_pZiffFUsIF1_qv4-9wU";
+const BUCKET="hq-documents";
+const app=document.getElementById("app");
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const WHO={owner:"You",chatgpt:"Ava",claude:"Claude",grok:"Bob"};
+const BN={wb:"Working Bones",fb:"Funny Bones Kids"};
+const when=d=>{try{return new Date(d).toLocaleString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}catch(e){return""}};
+const day=d=>{try{return new Date(d).toLocaleDateString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric"})}catch(e){return""}};
+
+async function refresh(){
+  if(!S||!S.rt||!K)return false;
+  const r=await fetch(U+"/auth/v1/token?grant_type=refresh_token",{method:"POST",headers:{apikey:K,"Content-Type":"application/json"},body:JSON.stringify({refresh_token:S.rt})});
+  if(!r.ok){if([400,401,403].includes(r.status)){S=null;LS.del("hq_sess")}return false}
+  const j=await r.json();if(!j.access_token||!j.refresh_token)return false;
+  S={at:j.access_token,rt:j.refresh_token,em:S.em};LS.set("hq_sess",JSON.stringify(S));return true;
+}
+async function api(path,opt={},retry=true){
+  const h=Object.assign({apikey:K,Authorization:"Bearer "+S.at},opt.headers||{});
+  const r=await fetch(U+path,Object.assign({},opt,{headers:h}));
+  if((r.status===401||r.status===403)&&retry&&await refresh())return api(path,opt,false);
+  return r;
+}
+async function j(path,opt){const r=await api(path,opt);let b=null;try{b=await r.json()}catch(e){}if(!r.ok)throw new Error((b&&(b.message||b.error))||("HTTP "+r.status));return b}
+const post=(path,body,extra={})=>j(path,{method:"POST",headers:Object.assign({"Content-Type":"application/json"},extra),body:JSON.stringify(body)});
+const patch=(path,body)=>j(path,{method:"PATCH",headers:{"Content-Type":"application/json",Prefer:"return=representation"},body:JSON.stringify(body)});
+
+let view="home",state={},flash={t:"",c:""};
+function go(){view=(location.hash||"#home").slice(1)||"home";flash={t:"",c:""};state={};show()}
+window.addEventListener("hashchange",go);
+document.getElementById("homeLink").onclick=e=>{e.preventDefault();location.hash="#home"};
+
+function show(){
+  if(!U||!S){app.innerHTML=`<h1>Tools</h1><div class="card"><b>Sign in first</b><p class="mu" style="margin:8px 0 0">Open <a href="../">Business HQ</a> on this phone and sign in, then come back here.</p></div>`;return}
+  ({home,launch,selling,docs,health,alerts}[view]||home)();
+}
+const say=(t,c="ok")=>{flash={t,c};const m=document.getElementById("msg");if(m){m.textContent=t;m.className="msg "+c}};
+const msgBox=()=>`<div id="msg" class="msg ${flash.c}" role="status">${esc(flash.t)}</div>`;
+
+/* ---------- Home: one place for everything ---------- */
+async function home(){
+  app.innerHTML=`<h1>Tools</h1><p class="mu">Everything in Business HQ, in one place.</p><div id="sum" class="card mu sm">Checking…</div>
+  <h2>Run the business</h2><div class="grid">
+   <a class="tile" href="#launch"><i>✓</i><b>Launch checklist</b><span>Funny Farm → Amazon</span></a>
+   <a class="tile" href="#selling"><i>▲</i><b>What's selling</b><span>Sales next to post results</span></a>
+   <a class="tile" href="#docs"><i>▤</i><b>Documents</b><span>Hand files between directors</span></a>
+   <a class="tile" href="#health"><i>♥</i><b>Health &amp; backups</b><span>Is everything working?</span></a>
+   <a class="tile" href="#alerts"><i>◉</i><b>Notifications</b><span>Get pinged on your iPhone</span></a>
+   <a class="tile" href="../"><i>⌂</i><b>Dashboard</b><span>Approvals, Boardroom, reports</span></a></div>
+  <h2>VR office</h2><div class="grid">
+   <a class="tile" href="../vr-room/"><i>◇</i><b>VR Office</b><span>Open on the Quest</span></a>
+   <a class="tile" href="../pair/"><i>⌗</i><b>Pair headset</b><span>Approve a headset code</span></a>
+   <a class="tile" href="../designs/"><i>✦</i><b>Design Library</b><span>Shirt designs for VR</span></a></div>`;
+  try{
+    const [h,steps,docs]=await Promise.all([
+      j("/rest/v1/hq_health_checks?select=ok,checked_at,results&order=checked_at.desc&limit=1"),
+      j("/rest/v1/hq_launch_steps?select=status&project_key=eq.fb_funny_farm_adventures_01"),
+      j("/rest/v1/hq_ai_handoffs?select=id&status=eq.ready_for_review&decision=is.null")]);
+    const hc=h[0],bad=hc?hc.results.filter(x=>!x.ok).length:0,done=steps.filter(s=>s.status==="done").length;
+    document.getElementById("sum").innerHTML=`${!hc?"Health check hasn't run yet.":bad?`<span class="err">⚠ ${bad} thing${bad>1?"s":""} need${bad>1?"":"s"} a look.</span> <a href="#health">See health</a>`:`<span class="ok">✓ All systems working</span> · checked ${esc(when(hc.checked_at))}`}<br>Funny Farm launch: ${done} of ${steps.length} steps done · ${docs.length} document${docs.length===1?"":"s"} waiting for review`;
+  }catch(e){document.getElementById("sum").textContent="Couldn't load the summary: "+e.message}
+}
+
+/* ---------- Launch checklist ---------- */
+const PHASE={book:"The book",listing:"Amazon listing",publish:"Publishing",marketing:"Launch marketing"};
+async function launch(){
+  app.innerHTML=`<h1>Funny Farm launch</h1><p class="mu">Every step from finished files to live on Amazon. Ticking a step only updates this list — nothing is published or bought from here.</p><div id="lc" class="card mu">Loading…</div>`;
+  try{state.steps=await j("/rest/v1/hq_launch_steps?select=*&project_key=eq.fb_funny_farm_adventures_01&order=step_order.asc");drawLaunch()}
+  catch(e){document.getElementById("lc").innerHTML=`<span class="err">Couldn't load the checklist: ${esc(e.message)}</span>`}
+}
+function drawLaunch(){
+  const L=state.steps,done=L.filter(s=>s.status==="done").length,pct=L.length?Math.round(100*done/L.length):0;
+  const next=L.find(s=>s.status!=="done");
+  let h=`<div class="card"><div class="row" style="justify-content:space-between"><span class="big">${done}/${L.length}</span><span class="mu">${pct}% done</span></div><div class="bar"><i style="width:${pct}%"></i></div>${next?`<p class="sm" style="margin:6px 0 0">Next: <b>${esc(next.title)}</b> · ${esc(WHO[next.owner_ai])}</p>`:`<p class="ok">Everything's done. 🎉</p>`}${msgBox()}</div>`;
+  for(const ph of Object.keys(PHASE)){
+    const S2=L.filter(s=>s.phase===ph);if(!S2.length)continue;
+    h+=`<h2>${PHASE[ph]}</h2><div class="card">`+S2.map(s=>`<div class="step ${s.status}" data-id="${s.id}">
+      <div class="t"><b>${esc(s.title)}</b></div>
+      <div style="margin:4px 0"><span class="chip ${s.owner_ai==="owner"?"gold":""}">${esc(WHO[s.owner_ai])}</span>${s.needs_approval?`<span class="chip gold">Your approval</span>`:""}${s.status==="blocked"?`<span class="chip bad">Blocked</span>`:""}${s.done_at&&s.status==="done"?`<span class="chip good">Done ${esc(day(s.done_at))}</span>`:""}</div>
+      <div class="mu sm">${esc(s.detail)}</div>
+      ${s.note?`<div class="sm" style="margin-top:6px">📝 ${esc(s.note)}</div>`:""}
+      <div class="seg">${[["todo","To do"],["doing","Doing"],["done","Done"],["blocked","Stuck"]].map(([k,l])=>`<button data-st="${k}" class="${s.status===k?"on":""}">${l}</button>`).join("")}<button data-note="1" title="Add a note">📝</button></div>
+      <div class="noteEdit" hidden><textarea rows="2" maxlength="1000" placeholder="e.g. Amazon link, price chosen, what's blocking it">${esc(s.note)}</textarea><div class="row" style="margin-top:6px"><button class="pri" data-savenote="1">Save note</button></div></div>
+    </div>`).join("")+`</div>`;
+  }
+  document.getElementById("lc").outerHTML=`<div id="lc">${h}</div>`;
+  document.querySelectorAll(".step").forEach(el=>{
+    const id=el.dataset.id;
+    el.querySelectorAll("[data-st]").forEach(b=>b.onclick=()=>setStep(id,{status:b.dataset.st,done_at:b.dataset.st==="done"?new Date().toISOString():null}));
+    el.querySelector("[data-note]").onclick=()=>{const n=el.querySelector(".noteEdit");n.hidden=!n.hidden;if(!n.hidden)n.querySelector("textarea").focus()};
+    el.querySelector("[data-savenote]").onclick=()=>setStep(id,{note:el.querySelector("textarea").value.trim()});
+  });
+}
+async function setStep(id,ch){
+  try{const r=await patch(`/rest/v1/hq_launch_steps?id=eq.${encodeURIComponent(id)}`,Object.assign(ch,{updated_at:new Date().toISOString()}));
+    const i=state.steps.findIndex(s=>s.id===id);if(r&&r[0])state.steps[i]=r[0];flash={t:"Saved.",c:"ok"};drawLaunch()}
+  catch(e){say("Couldn't save: "+e.message,"err")}
+}
+
+/* ---------- What's selling ---------- */
+async function selling(){
+  app.innerHTML=`<h1>What's selling</h1><p class="mu">Store orders from Fourthwall next to how your posts did. Read-only, real numbers only.</p><div id="sl" class="card mu">Loading…</div>`;
+  try{
+    const since=new Date(Date.now()-30*864e5).toISOString();
+    const [snap,posts]=await Promise.all([
+      j("/rest/v1/hq_order_snapshots?select=checked_at,ok,order_count,orders_last_7_days,newest_order_at,product_counts&business_id=eq.wb&ok=eq.true&order=checked_at.desc&limit=1"),
+      j(`/rest/v1/hq_post_status?select=business_id,network,scheduled_at,caption_preview,status,views,reach,likes,comments,link_clicks,public_url&scheduled_at=gte.${encodeURIComponent(since)}&order=scheduled_at.desc&limit=200`)]);
+    const o=snap[0],pub=posts.filter(p=>p.status==="published");
+    const sum=k=>pub.reduce((n,p)=>n+(Number.isFinite(p[k])?p[k]:0),0);
+    const pc=(o&&Array.isArray(o.product_counts))?o.product_counts:null;
+    const NET={facebook:"Facebook",instagram:"Instagram",tiktok:"TikTok"};
+    const ranked=[...pub].sort((a,b)=>((b.link_clicks||0)*20+(b.views||0))-((a.link_clicks||0)*20+(a.views||0))).slice(0,8);
+    let h=`<div class="card"><b>Working Bones store</b>${!o?`<p class="mu" style="margin:8px 0 0">No successful order check yet.</p>`:`
+      <div class="row" style="margin-top:8px;gap:24px"><div><div class="big">${o.order_count}</div><div class="mu sm">orders total</div></div><div><div class="big">${o.orders_last_7_days??"–"}</div><div class="mu sm">this week</div></div></div>
+      ${o.order_count===0?`<p class="sm" style="margin:10px 0 0">Fourthwall hasn't recorded any orders yet.</p>`:""}
+      ${pc&&pc.length?`<table style="margin-top:10px"><tr><th>Top designs</th><th class="n">30 days</th><th class="n">All time</th></tr>${pc.slice(0,10).map(p=>`<tr><td>${esc(p.name)}</td><td class="n">${p.units_30d}</td><td class="n">${p.units}</td></tr>`).join("")}</table>`:o.order_count>0?`<p class="mu sm" style="margin:10px 0 0">Per-design counts start with the next order check (three times a day).</p>`:""}
+      <p class="mu sm" style="margin:8px 0 0">Checked ${esc(when(o.checked_at))}${o.newest_order_at?` · newest order ${esc(when(o.newest_order_at))}`:""}</p>`}</div>
+    <div class="card"><b>Posts, last 30 days</b><div class="row" style="margin-top:8px;gap:24px"><div><div class="big">${pub.length}</div><div class="mu sm">posts live</div></div><div><div class="big">${sum("views").toLocaleString()}</div><div class="mu sm">views</div></div><div><div class="big">${sum("link_clicks").toLocaleString()}</div><div class="mu sm">link clicks</div></div></div>
+      ${ranked.length?`<table style="margin-top:10px"><tr><th>Best posts</th><th class="n">Views</th><th class="n">Clicks</th></tr>${ranked.map(p=>`<tr><td>${esc((p.caption_preview||"Post").slice(0,60))}<div class="mu sm">${esc(NET[p.network]||p.network)} · ${esc(BN[p.business_id]||"")} · ${esc(day(p.scheduled_at))}</div></td><td class="n">${p.views??"–"}</td><td class="n">${p.link_clicks??"–"}</td></tr>`).join("")}</table>`:`<p class="mu sm" style="margin:8px 0 0">No published posts tracked in the last 30 days.</p>`}
+      <p class="mu sm" style="margin:8px 0 0">Ranked by link clicks first, then views. Clicks are the closest sign a post sends people to the store.</p></div>
+    <div class="card"><b>What this tells us</b><p class="sm" style="margin:8px 0 0">${insight(o,pub,sum)}</p></div>`;
+    document.getElementById("sl").outerHTML=`<div id="sl">${h}</div>`;
+  }catch(e){document.getElementById("sl").innerHTML=`<span class="err">Couldn't load: ${esc(e.message)}</span>`}
+}
+function insight(o,pub,sum){
+  if(!o)return "We need at least one order check before comparing.";
+  const v=sum("views"),c=sum("link_clicks");
+  if(!pub.length)return "No posts went out in the last 30 days, so there's nothing to compare yet. Regular posting is the first lever.";
+  if(o.order_count===0&&c===0)return `Posts reached ${v.toLocaleString()} views but no one clicked through to the store yet. Worth testing posts with a clear "shop here" link and the product front and center.`;
+  if(o.order_count===0)return `${c} people clicked from posts to the store, but none bought yet. The posts are doing their job; the next thing to look at is the store page, price or shipping.`;
+  return `The store has ${o.order_count} order${o.order_count===1?"":"s"} and posts drove ${c} link click${c===1?"":"s"} this month. Watch whether the designs at the top of the sales list match the posts with the most clicks.`;
+}
+
+/* ---------- Documents (shared handoff folder) ---------- */
+async function docs(){
+  state.biz=state.biz||LS.get("hq_hub_biz")||"wb";
+  app.innerHTML=`<h1>Documents</h1><p class="mu">Files the directors hand to each other. Download or share one straight into ChatGPT or Grok.</p>
+  <div class="card"><div class="row"><select id="biz" style="flex:1">${Object.entries(BN).map(([k,v])=>`<option value="${k}" ${k===state.biz?"selected":""}>${v}</option>`).join("")}</select></div>
+   <label for="f" class="pick" style="margin-top:12px"><b>＋ Add a document</b><span class="mu sm">PDF, Word, text, Markdown, CSV, PNG or JPG · up to 25 MB</span></label><input id="f" type="file" accept=".pdf,.md,.txt,.csv,.docx,.png,.jpg,.jpeg">
+   <div id="up" hidden><label>What is it?</label><input type="text" id="u_t" maxlength="200" placeholder="e.g. Outer Space book draft, rev 2">
+    <div class="row" style="margin-top:4px"><div style="flex:1"><label>Made by</label><select id="u_w"><option value="claude">Claude</option><option value="chatgpt">Ava</option><option value="grok">Bob</option></select></div>
+    <div style="flex:1"><label>Goes to</label><select id="u_r"><option value="owner">You (review)</option><option value="chatgpt">Ava</option><option value="grok">Bob</option><option value="claude">Claude</option></select></div></div>
+    <div class="row" style="margin-top:12px"><button class="pri" id="u_go">Save to Business HQ</button><button id="u_x">Cancel</button></div></div>${msgBox()}</div>
+  <div id="dl" class="card mu">Loading…</div>`;
+  document.getElementById("biz").onchange=e=>{state.biz=e.target.value;LS.set("hq_hub_biz",state.biz);docs()};
+  const f=document.getElementById("f");
+  f.onchange=()=>{if(!f.files[0])return;state.file=f.files[0];document.getElementById("up").hidden=false;document.getElementById("u_t").value=state.file.name.replace(/\.[^.]+$/,"").replace(/[-_]+/g," ");};
+  document.getElementById("u_x").onclick=()=>{state.file=null;f.value="";document.getElementById("up").hidden=true};
+  document.getElementById("u_go").onclick=uploadDoc;
+  loadDocs();
+}
+const MIME={pdf:"application/pdf",md:"text/markdown",txt:"text/plain",csv:"text/csv",docx:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg"};
+async function uploadDoc(){
+  const file=state.file;if(!file)return;
+  const ext=(file.name.split(".").pop()||"").toLowerCase(),type=MIME[ext];
+  if(!type)return say("That file type isn't supported. Use PDF, Word, text, Markdown, CSV, PNG or JPG.","err");
+  if(file.size>25*1024*1024)return say("That file is over 25 MB.","err");
+  const title=document.getElementById("u_t").value.trim();if(!title)return say("Give it a short name first.","err");
+  const btn=document.getElementById("u_go");btn.disabled=true;say("Uploading…","mu");
+  const safe=file.name.toLowerCase().replace(/[^a-z0-9._-]+/g,"-").replace(/^-+|-+$/g,"").slice(-80)||("file."+ext);
+  const path=`${state.biz}/handoffs/${new Date().toISOString().slice(0,10)}-${Math.random().toString(36).slice(2,8)}-${safe}`;
+  try{
+    const r=await api(`/storage/v1/object/${BUCKET}/${path.split("/").map(encodeURIComponent).join("/")}`,{method:"POST",headers:{"Content-Type":type},body:file});
+    if(!r.ok)throw new Error("upload failed (HTTP "+r.status+")");
+    const to=document.getElementById("u_r").value;
+    await post("/rest/v1/hq_ai_handoffs",{business:state.biz,worker:document.getElementById("u_w").value,goal:title,result:"",status:"ready_for_review",next_recipient:to,file_path:path,file_name:file.name.slice(0,200)},{Prefer:"return=minimal"});
+    flash={t:`✓ Saved. ${to==="owner"?"It's waiting for your review.":`It's in ${WHO[to]}'s pile.`}`,c:"ok"};state.file=null;docs();
+  }catch(e){btn.disabled=false;say("Couldn't save it: "+e.message,"err")}
+}
+async function loadDocs(){
+  try{
+    state.docs=await j(`/rest/v1/hq_ai_handoffs?select=id,worker,goal,status,next_recipient,file_name,file_path,created_at,decision&business=eq.${state.biz}&file_name=not.is.null&order=created_at.desc&limit=60`);
+    const L=state.docs;
+    document.getElementById("dl").outerHTML=`<div id="dl" class="card">${!L.length?`<span class="mu">No documents for ${esc(BN[state.biz])} yet.</span>`:L.map(d=>`<div class="doc" data-id="${d.id}">
+      <b>${esc(d.goal)}</b><div style="margin:4px 0">${chipFor(d)}<span class="chip">${esc(WHO[d.worker])} → ${esc(WHO[d.next_recipient]||"—")}</span></div>
+      <div class="mu sm">${esc(d.file_name)} · ${esc(day(d.created_at))}</div>
+      ${d.file_path?`<div class="row" style="margin-top:8px"><button data-share="1">Share…</button><button data-open="1">Open</button>${d.status==="ready_for_review"&&!d.decision?`<button data-rev="1">Mark reviewed</button>`:""}</div>`:`<div class="mu sm" style="margin-top:4px">Older record: the file itself wasn't stored. Re-add it above if you still need it.</div>`}
+    </div>`).join("")}</div>`;
+    document.querySelectorAll(".doc").forEach(el=>{const d=L.find(x=>x.id===el.dataset.id);
+      el.querySelector("[data-share]")?.addEventListener("click",()=>getDoc(d,"share"));
+      el.querySelector("[data-open]")?.addEventListener("click",()=>getDoc(d,"open"));
+      el.querySelector("[data-rev]")?.addEventListener("click",async()=>{try{await patch(`/rest/v1/hq_ai_handoffs?id=eq.${d.id}`,{status:"reviewed",updated_at:new Date().toISOString()});loadDocs()}catch(e){say("Couldn't update: "+e.message,"err")}});
+    });
+  }catch(e){document.getElementById("dl").innerHTML=`<span class="err">Couldn't load documents: ${esc(e.message)}</span>`}
+}
+function chipFor(d){if(d.decision==="approved")return`<span class="chip good">Approved</span>`;if(d.decision==="revise")return`<span class="chip bad">Needs revision</span>`;if(d.status==="ready_for_review")return`<span class="chip gold">Waiting for review</span>`;if(d.status==="reviewed")return`<span class="chip">Reviewed</span>`;return`<span class="chip">Draft</span>`}
+async function getDoc(d,how){
+  say("Getting the file…","mu");
+  try{
+    const r=await api(`/storage/v1/object/authenticated/${BUCKET}/${d.file_path.split("/").map(encodeURIComponent).join("/")}`);
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    const blob=await r.blob(),file=new File([blob],d.file_name,{type:blob.type||"application/octet-stream"});
+    if(how==="share"&&navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:d.goal});say("","ok");return}
+    const u=URL.createObjectURL(file),a=document.createElement("a");a.href=u;a.download=d.file_name;a.target="_blank";a.rel="noopener";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);say("","ok");
+  }catch(e){if(e&&e.name==="AbortError")return say("","ok");say("Couldn't get the file: "+(e.message||e),"err")}
+}
+
+/* ---------- Health & backups ---------- */
+async function health(){
+  app.innerHTML=`<h1>Health &amp; backups</h1><p class="mu">HQ checks itself every morning at 7:30 and pings you if something's wrong. A full backup is saved every Sunday (last 8 kept).</p>
+  <div id="hc" class="card mu">Loading…</div><h2>Backups</h2><div id="bk" class="card mu">Loading…</div>`;
+  loadHealth();loadBackups();
+}
+function drawHealth(r,at){
+  document.getElementById("hc").outerHTML=`<div id="hc" class="card">${r.ok?`<b class="ok">✓ Everything's working</b>`:`<b class="err">⚠ Something needs a look</b>`}
+  <table style="margin-top:8px">${r.results.map(x=>`<tr><td>${x.ok?"✓":"⚠"}</td><td><b>${esc(x.name)}</b><div class="mu sm">${esc(x.detail||"")}</div></td></tr>`).join("")}</table>
+  <div class="row" style="margin-top:10px"><button id="hcNow">Check now</button><span class="mu sm">${at?"Checked "+esc(when(at)):""}</span></div>${msgBox()}</div>`;
+  document.getElementById("hcNow").onclick=async()=>{say("Checking…","mu");try{const x=await post("/rest/v1/rpc/hq_health_check_now",{});drawHealth(x,new Date().toISOString())}catch(e){say("Couldn't run the check: "+e.message,"err")}};
+}
+async function loadHealth(){
+  try{const h=await j("/rest/v1/hq_health_checks?select=ok,checked_at,results&order=checked_at.desc&limit=1");
+    if(h[0])drawHealth(h[0],h[0].checked_at);else{const x=await post("/rest/v1/rpc/hq_health_check_now",{});drawHealth(x,new Date().toISOString())}}
+  catch(e){document.getElementById("hc").innerHTML=`<span class="err">Couldn't load: ${esc(e.message)}</span>`}
+}
+async function loadBackups(){
+  try{const L=await post("/rest/v1/rpc/hq_backup_list",{});
+    document.getElementById("bk").outerHTML=`<div id="bk" class="card">${!L.length?`<span class="mu">No backups yet.</span>`:`<table>${L.map(b=>`<tr><td>${esc(when(b.created_at))}</td><td class="n mu">${Math.max(1,Math.round(b.bytes/1024))} KB</td><td class="n"><button data-bk="${b.id}">Download</button></td></tr>`).join("")}</table>`}
+    <p class="mu sm" style="margin:8px 0 0">Backups cover tasks, approvals, documents list, Boardroom history, brainstorm notes and the launch checklist. Keep a copy in Files or iCloud every so often too.</p></div>`;
+    document.querySelectorAll("[data-bk]").forEach(b=>b.onclick=async()=>{b.disabled=true;try{const d=await post("/rest/v1/rpc/hq_backup_get",{p_id:Number(b.dataset.bk)});if(!d)throw new Error("not available");
+      const f=new File([JSON.stringify(d,null,1)],`business-hq-backup-${String(d.created_at||"").slice(0,10)}.json`,{type:"application/json"});
+      if(navigator.canShare&&navigator.canShare({files:[f]}))await navigator.share({files:[f]});else{const u=URL.createObjectURL(f),a=document.createElement("a");a.href=u;a.download=f.name;a.click();setTimeout(()=>URL.revokeObjectURL(u),60000)}}
+      catch(e){if(!(e&&e.name==="AbortError"))alertMsg("Couldn't download: "+e.message)}b.disabled=false});
+  }catch(e){document.getElementById("bk").innerHTML=`<span class="err">Couldn't load backups: ${esc(e.message)}</span>`}
+}
+function alertMsg(t){const m=document.getElementById("msg");if(m){m.textContent=t;m.className="msg err"}}
+
+/* ---------- Notifications ---------- */
+const standalone=()=>window.navigator.standalone===true||matchMedia("(display-mode: standalone)").matches;
+const pushOK=()=>"serviceWorker" in navigator&&"PushManager" in window&&"Notification" in window;
+function b64u(s){const p="=".repeat((4-s.length%4)%4),b=atob((s+p).replace(/-/g,"+").replace(/_/g,"/"));return Uint8Array.from(b,c=>c.charCodeAt(0))}
+async function alerts(){
+  let sub=null;
+  if(pushOK()){try{const reg=await navigator.serviceWorker.getRegistration("../");sub=reg?await reg.pushManager.getSubscription():null}catch(e){}}
+  const perm="Notification" in window?Notification.permission:"unsupported";
+  app.innerHTML=`<h1>Notifications</h1><p class="mu">HQ pings your iPhone when an approval is waiting, a document is ready for your review, or the morning health check finds a problem. Never more than 20 an hour.</p>
+  <div class="card">${!pushOK()||!standalone()?`<b>One-time setup</b><ol class="sm" style="padding-left:20px;margin:8px 0 0"><li>In Safari, open Business HQ and tap <b>Share</b> → <b>Add to Home Screen</b>. If it's already there from before, delete the old icon and add it again so notifications are allowed.</li><li>Open Business HQ from the Home Screen icon.</li><li>Go to <b>Tools → Notifications</b> and tap <b>Turn on</b>.</li></ol><p class="mu sm" style="margin:8px 0 0">iPhones only allow web notifications for apps opened from the Home Screen (iOS 16.4 or newer).</p>`
+   :sub?`<b class="ok">✓ Notifications are on for this iPhone</b><div class="row" style="margin-top:10px"><button class="pri" id="test">Send a test</button><button id="off">Turn off</button></div>`
+   :perm==="denied"?`<b class="err">Notifications are blocked</b><p class="sm" style="margin:8px 0 0">Open iPhone <b>Settings → Notifications → Business HQ</b> and allow them, then come back.</p>`
+   :`<b>Notifications are off</b><div class="row" style="margin-top:10px"><button class="pri" id="on">Turn on</button></div>`}${msgBox()}</div>`;
+  document.getElementById("on")?.addEventListener("click",turnOn);
+  document.getElementById("off")?.addEventListener("click",()=>turnOff(sub));
+  document.getElementById("test")?.addEventListener("click",async()=>{try{const r=await post("/rest/v1/rpc/hq_push_test",{});say(r.ok?"Sent. It should arrive in a few seconds.":r.message,r.ok?"ok":"err")}catch(e){say("Couldn't send: "+e.message,"err")}});
+}
+async function turnOn(){
+  say("Asking your iPhone…","mu");
+  try{
+    const perm=await Notification.requestPermission();
+    if(perm!=="granted"){say("Notifications weren't allowed.","err");return alerts()}
+    const reg=await navigator.serviceWorker.register("../hq-push-sw.js",{scope:"../"});
+    await navigator.serviceWorker.ready;
+    const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64u(VAPID)});
+    const k=sub.toJSON().keys||{};
+    await post("/rest/v1/hq_push_subscriptions?on_conflict=endpoint",{endpoint:sub.endpoint,p256dh:k.p256dh,auth:k.auth,device_label:"iPhone"},{Prefer:"return=minimal,resolution=ignore-duplicates"});
+    flash={t:"✓ Turned on. Tap Send a test to check.",c:"ok"};alerts();
+  }catch(e){say("Couldn't turn on: "+(e.message||e),"err")}
+}
+async function turnOff(sub){
+  try{if(sub){await j(`/rest/v1/hq_push_subscriptions?endpoint=eq.${encodeURIComponent(sub.endpoint)}`,{method:"DELETE"}).catch(()=>{});await sub.unsubscribe()}flash={t:"Turned off for this iPhone.",c:"ok"};alerts()}
+  catch(e){say("Couldn't turn off: "+e.message,"err")}
+}
+
+go();
+</script>
+</body>
+</html>
