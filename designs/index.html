@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://*.supabase.co; img-src blob: data:; base-uri 'none'; form-action 'none'">
+<title>Design Library · Business HQ</title>
+<style>
+:root{--gold:#c9a24a;--gold2:#e6c878;--text:#f3ede0;--muted:#a59f92;--bad:#ef8f7a}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:#050506;color:var(--text);font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;padding:max(20px,env(safe-area-inset-top)) 16px 40px}
+main{max-width:760px;margin:0 auto}
+a{color:var(--gold2)}
+h1{font:600 26px Georgia,serif;color:var(--gold2);margin:10px 0 4px}
+p{color:var(--muted);margin:0 0 16px}
+.card{background:#111113;border:1px solid rgba(201,162,74,.4);border-radius:18px;padding:16px;margin-bottom:16px}
+.pick{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:120px;border:2px dashed rgba(201,162,74,.55);border-radius:14px;cursor:pointer;text-align:center;padding:14px}
+.pick b{color:var(--gold2);font-size:18px}
+input[type=file]{display:none}
+.msg{margin-top:12px;font-size:15px;min-height:20px}
+.ok{color:var(--gold2)}.bad{color:var(--bad)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.tile{background:#0b0b0d;border:1px solid #2c2c31;border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.tile img{width:100%;aspect-ratio:1;object-fit:contain;background:#161618}
+.tile .n{font-size:13px;padding:8px 10px 4px;word-break:break-all}
+.tile .row{display:flex;gap:6px;padding:0 8px 8px}
+button{font:inherit;font-size:14px;color:var(--text);background:#17171a;border:1px solid #2c2c31;border-radius:10px;padding:7px 10px;min-height:38px;cursor:pointer;flex:1}
+button.del{border-color:#5a2a22;color:#efa27a}
+button.sure{background:#7a2a20;border-color:#b3261e;color:#fff}
+.bar{height:6px;border-radius:3px;background:#222;margin-top:10px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--gold);transition:width .2s}
+</style>
+</head>
+<body>
+<main>
+  <a href="../">← Business HQ</a>
+  <h1>Design Library</h1>
+  <p>Shirt designs for the Apparel Corner in the VR office. Files are stored privately in Business HQ. Only your owner sign-in can see them.</p>
+  <div id="app"></div>
+</main>
+<script>
+const LS={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
+const U=LS.get("hq_url")||"",K=LS.get("hq_key")||"";let S=null;try{S=JSON.parse(LS.get("hq_sess"))}catch(e){}
+const BUCKET="hq-documents",FOLDER="wb/designs";
+const app=document.getElementById("app");
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let files=[],msg={t:"",c:""},busy=false,confirmDel=null;
+const urls=new Map();
+
+async function refresh(){
+  if(!S||!S.rt||!K)return false;
+  const r=await fetch(U+"/auth/v1/token?grant_type=refresh_token",{method:"POST",headers:{apikey:K,"Content-Type":"application/json"},body:JSON.stringify({refresh_token:S.rt})});
+  if(!r.ok){if([400,401,403].includes(r.status)){S=null;LS.del("hq_sess")}return false}
+  const j=await r.json();if(!j.access_token||!j.refresh_token)return false;
+  S={at:j.access_token,rt:j.refresh_token,em:S.em};LS.set("hq_sess",JSON.stringify(S));return true;
+}
+async function api(path,opt={},retry=true){
+  const h=Object.assign({apikey:K,Authorization:"Bearer "+S.at},opt.headers||{});
+  const r=await fetch(U+path,Object.assign({},opt,{headers:h}));
+  if((r.status===401||r.status===403)&&retry&&await refresh())return api(path,opt,false);
+  return r;
+}
+function safeName(n){
+  const m=String(n).toLowerCase().match(/^(.*?)(\.(png|jpe?g))?$/);const ext=(m&&m[3]?m[3]:"png").replace("jpeg","jpg");
+  let base=(m?m[1]:n).replace(/[^a-z0-9._-]+/g,"-").replace(/^-+|-+$/g,"").slice(0,60)||"design";
+  return base+"."+ext;
+}
+async function list(){
+  const r=await api(`/storage/v1/object/list/${BUCKET}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prefix:FOLDER,limit:200,offset:0,sortBy:{column:"name",order:"asc"}})});
+  if(!r.ok)throw new Error("Couldn't load the library ("+r.status+")");
+  const j=await r.json();files=j.filter(f=>f.name&&/\.(png|jpe?g)$/i.test(f.name));
+  for(const f of files)if(!urls.has(f.name))thumb(f.name);
+}
+async function thumb(name){
+  urls.set(name,"");
+  try{const r=await api(`/storage/v1/object/authenticated/${BUCKET}/${FOLDER}/${encodeURIComponent(name)}`);if(r.ok){urls.set(name,URL.createObjectURL(await r.blob()));render()}}catch(e){}
+}
+async function upload(list){
+  busy=true;let done=0,fail=0;const total=list.length;
+  render(0,total);
+  for(const f of list){
+    if(!/^image\/(png|jpeg)$/.test(f.type)){fail++;done++;render(done,total);continue}
+    if(f.size>25*1024*1024){fail++;done++;render(done,total);continue}
+    const name=safeName(f.name);
+    try{const r=await api(`/storage/v1/object/${BUCKET}/${FOLDER}/${encodeURIComponent(name)}`,{method:"POST",headers:{"Content-Type":f.type,"x-upsert":"true","cache-control":"3600"},body:f});if(!r.ok)fail++;urls.delete(name)}catch(e){fail++}
+    done++;render(done,total);
+  }
+  busy=false;
+  msg=fail?{t:`${total-fail} uploaded, ${fail} didn't (PNG or JPG only, up to 25 MB).`,c:"bad"}:{t:`✓ ${total} design${total===1?"":"s"} uploaded. They appear in the VR binder within a minute.`,c:"ok"};
+  try{await list()}catch(e){}
+  render();
+}
+async function remove(name){
+  const r=await api(`/storage/v1/object/${BUCKET}/${FOLDER}/${encodeURIComponent(name)}`,{method:"DELETE"});
+  msg=r.ok?{t:`Removed ${name}.`,c:"ok"}:{t:"Couldn't remove it. Try again.",c:"bad"};
+  confirmDel=null;if(r.ok){const u=urls.get(name);if(u)URL.revokeObjectURL(u);urls.delete(name)}
+  try{await list()}catch(e){}render();
+}
+function render(done,total){
+  if(!U||!S){app.innerHTML=`<div class="card"><b>Sign in first</b><p style="margin:8px 0 0">Open <a href="../">Business HQ</a> on this phone and sign in, then come back here.</p></div>`;return}
+  app.innerHTML=`<div class="card"><label class="pick" for="f"><b>＋ Add designs</b><span>Pick PNG or JPG files from Photos or Files. You can choose several at once.</span></label><input id="f" type="file" accept="image/png,image/jpeg" multiple>
+  ${busy?`<div class="bar"><i style="width:${total?Math.round(100*done/total):0}%"></i></div><div class="msg">Uploading ${done} of ${total}…</div>`:`<div class="msg ${msg.c}" role="status">${esc(msg.t)}</div>`}</div>
+  <div class="card"><b>${files.length} design${files.length===1?"":"s"} in the library</b><div class="grid" style="margin-top:12px">${files.map(f=>`<div class="tile">${urls.get(f.name)?`<img alt="" src="${urls.get(f.name)}">`:`<div style="aspect-ratio:1;background:#161618"></div>`}<div class="n">${esc(f.name)}</div><div class="row">${confirmDel===f.name?`<button class="sure" data-del="${esc(f.name)}">Delete for good</button><button data-cancel="1">Keep</button>`:`<button class="del" data-ask="${esc(f.name)}">Remove</button>`}</div></div>`).join("")}</div></div>`;
+  const inp=document.getElementById("f");inp.onchange=()=>{if(inp.files.length&&!busy)upload([...inp.files])};
+  app.querySelectorAll("[data-ask]").forEach(b=>b.onclick=()=>{confirmDel=b.dataset.ask;render()});
+  app.querySelectorAll("[data-cancel]").forEach(b=>b.onclick=()=>{confirmDel=null;render()});
+  app.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>remove(b.dataset.del));
+}
+render();
+if(U&&S)list().then(()=>render()).catch(e=>{msg={t:e.message,c:"bad"};render()});
+</script>
+</body>
+</html>
