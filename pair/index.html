@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://*.supabase.co; base-uri 'none'; form-action 'none'">
+<title>Pair headset · Business HQ</title>
+<style>
+:root{--gold:#c9a24a;--gold2:#e6c878;--text:#f3ede0;--muted:#a59f92;--bad:#ef8f7a}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:#050506;color:var(--text);font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;display:flex;justify-content:center;padding:max(24px,env(safe-area-inset-top)) 16px 32px}
+main{width:100%;max-width:420px}
+h1{font:600 26px Georgia,serif;color:var(--gold2);margin:8px 0 4px}
+p{color:var(--muted);margin:0 0 18px}
+.card{background:#111113;border:1px solid rgba(201,162,74,.4);border-radius:18px;padding:18px}
+input{width:100%;font:600 30px ui-monospace,Menlo,monospace;letter-spacing:.12em;text-align:center;text-transform:uppercase;color:var(--gold2);background:#070708;border:1px solid #2c2c31;border-radius:14px;padding:14px 10px}
+input:focus{outline:2px solid var(--gold);border-color:var(--gold)}
+button{width:100%;margin-top:12px;font-family:inherit;font-weight:700;font-size:17px;min-height:52px;border-radius:14px;border:1px solid var(--gold);background:var(--gold);color:#16120a;cursor:pointer}
+button.sec{background:transparent;color:var(--text);border-color:#2c2c31;font-weight:500}
+button:disabled{opacity:.5}
+.msg{margin-top:14px;min-height:22px;font-size:15px}
+.ok{color:var(--gold2)}.bad{color:var(--bad)}
+.confirm{margin-top:14px;padding:14px;border-radius:14px;background:#0b0b0d;border:1px dashed rgba(201,162,74,.5)}
+a{color:var(--gold2)}
+small{display:block;margin-top:18px;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <a href="../">← Business HQ</a>
+  <h1>Pair a headset</h1>
+  <p>Enter the code showing in your Quest. Your phone stays signed in; the headset gets its own sign-in.</p>
+  <div class="card" id="card"></div>
+  <small>Codes last 3 minutes and work once. Only approve a code you can see in your own headset right now.</small>
+</main>
+<script>
+const LS={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
+const U=LS.get("hq_url")||"",K=LS.get("hq_key")||"";let S=null;try{S=JSON.parse(LS.get("hq_sess"))}catch(e){}
+const card=document.getElementById("card");
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let pending=null;
+
+function normalize(v){const s=String(v).toUpperCase().replace(/[^A-Z0-9]/g,"");const m=s.match(/^([A-Z]{3,4})([0-9]{4})$/);return m?m[1]+"-"+m[2]:null}
+
+async function refresh(){
+  if(!S||!S.rt||!K)return false;
+  const r=await fetch(U+"/auth/v1/token?grant_type=refresh_token",{method:"POST",headers:{apikey:K,"Content-Type":"application/json"},body:JSON.stringify({refresh_token:S.rt})});
+  if(!r.ok){if([400,401,403].includes(r.status)){S=null;LS.del("hq_sess")}return false}
+  const j=await r.json();if(!j.access_token||!j.refresh_token)return false;
+  S={at:j.access_token,rt:j.refresh_token,em:S.em};LS.set("hq_sess",JSON.stringify(S));return true;
+}
+async function call(action,code,retry=true){
+  const r=await fetch(U+"/functions/v1/hq-device-pair",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+S.at},body:JSON.stringify({action,code})});
+  let j={};try{j=await r.json()}catch(e){}
+  if(r.status===401&&retry&&await refresh())return call(action,code,false);
+  return{ok:r.ok,status:r.status,j};
+}
+
+function render(state={}){
+  if(!U||!S){
+    card.innerHTML=`<b>Sign in first</b><p style="margin:8px 0 0">Open <a href="../">Business HQ</a> on this phone and sign in, then come back here.</p>`;
+    return;
+  }
+  if(state.done){
+    card.innerHTML=`<div class="ok" style="font:600 20px Georgia,serif">✓ Headset approved</div><p style="margin:8px 0 0">${esc(state.label||"Your headset")} will sign itself in within a few seconds.</p><button class="sec" id="again">Pair another device</button>`;
+    document.getElementById("again").onclick=()=>{pending=null;render()};
+    return;
+  }
+  card.innerHTML=`<label for="code" style="display:block;margin-bottom:8px;color:var(--muted);font-size:14px">Headset code</label>
+  <input id="code" inputmode="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" placeholder="GOLD-4821" maxlength="12" value="${esc(state.code||"")}">
+  ${pending?`<div class="confirm"><b>Approve this device?</b><div style="color:var(--muted);font-size:14px;margin-top:4px">${esc(pending.label||"Unknown device")} · code made ${pending.age}s ago</div><button id="approve">Approve headset</button><button class="sec" id="cancel">Not mine — cancel</button></div>`:`<button id="look">Find headset</button>`}
+  <div class="msg ${state.cls||""}" role="status">${esc(state.msg||"")}</div>`;
+  const inp=document.getElementById("code");
+  if(!pending){inp.focus();inp.addEventListener("keydown",e=>{if(e.key==="Enter")look()});document.getElementById("look").onclick=look}
+  else{document.getElementById("approve").onclick=approve;document.getElementById("cancel").onclick=()=>{pending=null;render({msg:"Cancelled. Nothing was approved."})}}
+}
+async function look(){
+  const code=normalize(document.getElementById("code").value);
+  if(!code)return render({code:document.getElementById("code").value,msg:"Codes look like GOLD-4821.",cls:"bad"});
+  render({code,msg:"Looking…"});
+  try{
+    const r=await call("peek",code);
+    if(!r.ok)return render({code,msg:r.j.error||"Something went wrong.",cls:"bad"});
+    if(!r.j.found)return render({code,msg:"No headset is waiting with that code. It may have expired — get a new one in the headset.",cls:"bad"});
+    pending={code,label:r.j.label,age:r.j.age_seconds};render({code});
+  }catch(e){render({code,msg:"Couldn't reach Business HQ. Check your connection.",cls:"bad"})}
+}
+async function approve(){
+  const code=pending.code;
+  document.getElementById("approve").disabled=true;
+  try{
+    const r=await call("approve",code);
+    if(r.ok&&r.j.approved){pending=null;return render({done:true,label:r.j.label})}
+    pending=null;render({code,msg:(r.j&&r.j.error)||"That code expired. Get a new one in the headset.",cls:"bad"});
+  }catch(e){pending=null;render({code,msg:"Couldn't reach Business HQ. Check your connection.",cls:"bad"})}
+}
+const pre=normalize(new URLSearchParams(location.search).get("code")||"");
+render({code:pre||""});
+</script>
+</body>
+</html>

@@ -31,6 +31,16 @@ button:disabled{opacity:.5;cursor:default}
 .toast.show{display:flex}
 .toast .t{font-weight:600}
 .toast .s{font-size:12px;color:var(--muted)}
+button.badge{min-height:0;cursor:pointer;font:inherit;font-size:13px}
+button.badge.signed{border-color:var(--gold);color:var(--gold2)}
+.pair{position:fixed;inset:0;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;padding:16px;z-index:5}
+.pair[hidden]{display:none}
+.pairCard{background:#111113;border:1px solid var(--gold);border-radius:20px;padding:24px;width:100%;max-width:440px;text-align:center}
+.pairCard h2{font:600 22px Georgia,serif;color:var(--gold2);margin:0 0 6px}
+.pairCard p{color:var(--muted);margin:6px 0}
+.pairCard .code{font:700 46px ui-monospace,Menlo,monospace;letter-spacing:.1em;color:var(--gold2);margin:14px 0 6px}
+.pairCard .url{color:var(--text);font-weight:600;word-break:break-all}
+.pairCard .row{justify-content:center;margin-top:14px}
 #boot{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;background:#050506;color:var(--gold2);font:500 18px Georgia,serif;letter-spacing:.04em}
 #boot small{display:block;margin-top:8px;color:var(--muted);font:13px -apple-system,Helvetica,Arial,sans-serif}
 </style>
@@ -45,7 +55,10 @@ button:disabled{opacity:.5;cursor:default}
   <a class="badge" href="../">← Business HQ</a>
   <span class="badge"><b>Executive Office</b> · Stage 1 preview</span>
   <span class="badge demo">DEMO · nothing here saves yet</span>
+  <button class="badge" id="authBadge" type="button">Sign in with phone code</button>
 </div>
+
+<div class="pair" id="pairBox" hidden><div class="pairCard" id="pairBody" role="dialog" aria-modal="true" aria-label="Headset sign-in"></div></div>
 
 <div class="toast" id="toast" role="status" aria-live="polite">
   <div><div class="t" id="toastT"></div><div class="s" id="toastS"></div></div>
@@ -116,7 +129,7 @@ if (renderer.xr.setFoveation) renderer.xr.setFoveation(1);
 const maxAniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x040405);
+scene.background = new THREE.Color(0xd9d1c2);
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
@@ -130,10 +143,10 @@ scene.add(rig);
 const std = (color, roughness, metalness, envMapIntensity = 0.35) =>
   new THREE.MeshStandardMaterial({ color, roughness, metalness, envMapIntensity });
 const MAT = {
-  floor: std(0x0e0e10, 0.26, 0.45, 0.55),
-  rug: std(0x131315, 0.95, 0.0, 0.15),
-  wall: std(0x17171a, 0.85, 0.05, 0.22),
-  ceiling: std(0x0b0b0c, 0.95, 0.0, 0.12),
+  floor: std(0xcdc2ad, 0.3, 0.05, 0.5),
+  rug: std(0x18181b, 0.95, 0.0, 0.15),
+  wall: std(0xeee5d1, 0.9, 0.0, 0.3),
+  ceiling: std(0xf6f1e8, 0.95, 0.0, 0.3),
   gold: std(GOLD, 0.24, 1.0, 1.1),
   bronze: std(0x5a4a2a, 0.35, 1.0, 0.7),
   glass: std(0x060608, 0.05, 0.75, 1.0),
@@ -346,9 +359,9 @@ function updateSky() {
 // ---------- lights ----------
 const lights = [];
 function buildLights() {
-  const hemi = new THREE.HemisphereLight(0xfff1dc, 0x0a0a0a, 0.45);
-  scene.add(hemi); lights.push([hemi, 0.45]);
-  for (const [x, y, z, i] of [[0, 2.9, -1.3, 16], [-5.4, 2.8, -0.8, 12], [5.4, 2.8, -0.8, 12], [0, 2.8, 3.6, 9]]) {
+  const hemi = new THREE.HemisphereLight(0xfff6e8, 0x8a7f6c, 1.0);
+  scene.add(hemi); lights.push([hemi, 1.0]);
+  for (const [x, y, z, i] of [[0, 2.9, -1.3, 18], [-5.4, 2.8, -0.8, 16], [5.4, 2.8, -0.8, 16], [0, 2.8, 3.6, 14]]) {
     const p = new THREE.PointLight(0xffd9a6, i, 0, 2);
     p.position.set(x, y, z); scene.add(p); lights.push([p, i]);
   }
@@ -770,15 +783,15 @@ function buildStations() {
     const g = stationGroup(STATIONS[4]);
     board = new THREE.Group(); board.position.set(0, 1.55, -1.9); g.add(board);
     const panel = labelPlane(3.3, 1.95, (c, w, h) => {
-      c.fillStyle = 'rgba(14,14,17,0.96)'; c.fillRect(0, 0, w, h);
-      c.textAlign = 'left'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.07}px ${SERIF}`;
+      c.fillStyle = '#faf6ee'; c.fillRect(0, 0, w, h);
+      c.textAlign = 'left'; c.fillStyle = '#9c7a2c'; c.font = `600 ${h * 0.07}px ${SERIF}`;
       c.fillText('BRAINSTORM', w * 0.03, h * 0.1);
-      c.fillStyle = '#a59f92'; c.font = `500 ${h * 0.03}px ${SANS}`; c.fillText('apps · products · books · anything we come up with', w * 0.25, h * 0.095);
+      c.fillStyle = '#7a7264'; c.font = `500 ${h * 0.03}px ${SANS}`; c.fillText('apps · products · books · anything we come up with', w * 0.25, h * 0.095);
       const cols = ['APP IDEAS', 'PRODUCT IDEAS', 'BOOK IDEAS', 'QUESTIONS'];
       cols.forEach((t, i) => {
         const x = w * (0.03 + i * 0.245);
         c.fillStyle = '#c9a24a'; c.fillRect(x, h * 0.14, w * 0.225, 3);
-        c.fillStyle = '#d9cfb6'; c.font = `600 ${h * 0.032}px ${SANS}`; c.fillText(t, x, h * 0.19);
+        c.fillStyle = '#2b251c'; c.font = `600 ${h * 0.032}px ${SANS}`; c.fillText(t, x, h * 0.19);
       });
     }, { px: 600, transparent: false });
     board.add(panel);
@@ -819,7 +832,7 @@ function buildStations() {
 let noteCount = 0;
 function drawNote(text, sub) {
   return (c, w, h) => {
-    c.fillStyle = '#efe2bd'; c.fillRect(0, 0, w, h);
+    c.fillStyle = '#f1dc9c'; c.fillRect(0, 0, w, h);
     c.fillStyle = '#c9a24a'; c.fillRect(0, 0, w, h * 0.07);
     c.fillStyle = '#1b160b'; c.textAlign = 'left'; c.font = `600 ${h * 0.1}px ${SERIF}`;
     wrap(c, text, w * 0.08, h * 0.25, w * 0.84, h * 0.12, 5);
@@ -1111,6 +1124,112 @@ function frame() {
   if (!window.__officeReady) { window.__officeReady = true; const b = $('#boot'); if (b) b.remove(); }
 }
 
+// ---------- headset sign-in with a phone code ----------
+// The headset never sees a password. It asks for a short code, you approve that code on your
+// signed-in phone (Hq/pair), and the headset receives its own Business HQ sign-in.
+const PAIR_FN = 'https://whvgwshdppluudzkhcqp.supabase.co/functions/v1/hq-device-pair';
+const PAIR_PAGE = 'workingbonesoutfitters.github.io/Hq/pair';
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+  del(k) { try { localStorage.removeItem(k); } catch (e) {} },
+};
+const session = () => { try { return JSON.parse(store.get('hq_sess')); } catch (e) { return null; } };
+let pairing = null, pairTimer = null;
+const pairPanel = labelPlane(0.7, 0.34, (c, w, h) => drawPair3d(c, w, h), { px: 1600 });
+pairPanel.position.set(0, 1.5, -1.25); pairPanel.visible = false; scene.add(pairPanel);
+function drawPair3d(c, w, h) {
+  panelBg(c, w, h, { radius: 0.06 });
+  c.textAlign = 'center'; c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.08}px ${SANS}`;
+  c.fillText('Sign this headset in — on your phone open', w / 2, h * 0.17);
+  c.fillStyle = '#f0e6cc'; c.font = `600 ${h * 0.075}px ${SANS}`; c.fillText(PAIR_PAGE, w / 2, h * 0.3);
+  c.fillStyle = '#e6c878'; c.font = `700 ${h * 0.25}px ui-monospace, Menlo, monospace`;
+  c.fillText(pairing ? pairing.code : '', w / 2, h * 0.66);
+  c.fillStyle = '#a59f92'; c.font = `500 ${h * 0.065}px ${SANS}`; c.fillText('Enter that code and tap Approve. It works once and expires in 3 minutes.', w / 2, h * 0.88);
+}
+function deviceLabel() {
+  const ua = navigator.userAgent || '';
+  if (/OculusBrowser|Quest/i.test(ua)) return 'Meta Quest browser';
+  if (/iPhone|iPad/i.test(ua)) return 'iPhone or iPad browser';
+  return 'Web browser';
+}
+function updateAuthBadge() {
+  const s = session(), b = $('#authBadge');
+  b.textContent = s ? '✓ Headset signed in' : 'Sign in with phone code';
+  b.classList.toggle('signed', !!s);
+}
+function showPairBox(html) { $('#pairBody').innerHTML = html; $('#pairBox').hidden = false; }
+function closePairBox() { $('#pairBox').hidden = true; }
+function stopPairing() { pairing = null; clearTimeout(pairTimer); pairPanel.visible = false; }
+function pairCountdown() {
+  if (!pairing) return;
+  const left = Math.max(0, Math.round((pairing.until - Date.now()) / 1000));
+  const el = $('#pairLeft'); if (el) el.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+}
+async function startPairing() {
+  stopPairing();
+  showPairBox('<h2>Getting a code…</h2>');
+  try {
+    const r = await fetch(PAIR_FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', label: deviceLabel() }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.code) throw new Error(j.error || 'Could not get a code');
+    pairing = { code: j.code, secret: j.secret, until: Date.now() + (j.expires_in || 180) * 1000 };
+  } catch (e) {
+    return showPairBox(`<h2>Couldn't get a code</h2><p>${String(e.message || e).replace(/[<>&]/g, '')}</p><div class="row"><button id="pairRetry">Try again</button><button id="pairClose">Close</button></div>`), wirePairButtons();
+  }
+  repaint(pairPanel.userData.tex, drawPair3d); pairPanel.visible = true;
+  showPairBox(`<h2>Sign this headset in</h2><p>On your phone, open</p><p class="url">${PAIR_PAGE}</p><p>and enter this code:</p><div class="code">${pairing.code}</div><p>Expires in <b id="pairLeft">3:00</b> · works once</p><div class="row"><button id="pairClose">Cancel</button></div>`);
+  wirePairButtons(); pairCountdown(); pollPairing();
+}
+async function pollPairing() {
+  if (!pairing) return;
+  pairCountdown();
+  if (Date.now() > pairing.until) {
+    stopPairing();
+    showPairBox('<h2>Code expired</h2><p>No problem — get a fresh one.</p><div class="row"><button id="pairRetry">New code</button><button id="pairClose">Close</button></div>');
+    return wirePairButtons();
+  }
+  const p = pairing;
+  try {
+    const r = await fetch(PAIR_FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'claim', code: p.code, secret: p.secret }) });
+    const j = await r.json().catch(() => ({}));
+    if (pairing !== p) return;
+    if (j.status === 'signed_in' && j.session) {
+      if (!store.get('hq_url')) store.set('hq_url', j.url);
+      if (!store.get('hq_key')) store.set('hq_key', j.key);
+      store.set('hq_sess', JSON.stringify({ at: j.session.access_token, rt: j.session.refresh_token, em: 'Meta Quest headset (paired)' }));
+      stopPairing(); updateAuthBadge();
+      showPairBox('<h2>✓ Headset signed in</h2><p>This headset now has its own Business HQ sign-in. You can sign it out any time from here.</p><div class="row"><button id="pairClose">Done</button></div>');
+      wirePairButtons(); showToast('Headset signed in', 'Paired with your phone. No password was typed.');
+      return;
+    }
+    if (j.status === 'expired') { pairing.until = 0; }
+  } catch (e) { /* keep trying until the code expires */ }
+  pairTimer = setTimeout(pollPairing, 2500);
+}
+async function signOutHeadset() {
+  const s = session(), U = store.get('hq_url'), K = store.get('hq_key');
+  if (s && U && K) {
+    try { await fetch(U + '/auth/v1/logout?scope=local', { method: 'POST', headers: { apikey: K, Authorization: 'Bearer ' + s.at } }); } catch (e) {}
+  }
+  store.del('hq_sess'); updateAuthBadge();
+  showPairBox('<h2>Signed out</h2><p>This headset no longer has a Business HQ sign-in.</p><div class="row"><button id="pairClose">Close</button></div>');
+  wirePairButtons();
+}
+function wirePairButtons() {
+  const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+  on('pairRetry', startPairing);
+  on('pairClose', () => { stopPairing(); closePairBox(); });
+  on('pairSignOut', signOutHeadset);
+}
+$('#authBadge').addEventListener('click', () => {
+  if (session()) {
+    showPairBox('<h2>Headset signed in</h2><p>Signed in through a phone code.</p><div class="row"><button id="pairSignOut">Sign out this headset</button><button id="pairClose">Close</button></div>');
+    wirePairButtons();
+  } else startPairing();
+});
+setInterval(pairCountdown, 1000);
+
 // ---------- build ----------
 buildRoom();
 buildWindowView();
@@ -1128,6 +1247,7 @@ setupXRInput();
 setupVRButton();
 teleport(STATIONS[0]);
 setSpeaker(null);
+updateAuthBadge();
 renderer.setAnimationLoop(frame);
 </script>
 </body>
