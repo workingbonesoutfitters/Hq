@@ -556,19 +556,65 @@ function addNote(text, x, y, sub = '', id = null) {
 // ================= the crew (Ava, Claude, Bob) =================
 const crew = [];
 const LOOKS = {
-  commander: { skin: 0xc68c6a, hair: 0x1a1210, jacket: 0x111114, trim: GOLD, pants: 0x101012, accent: 0xf4e2b4, sleeves: 'jacket' },
-  pilot:     { skin: 0xe2b392, hair: 0x5a3b22, jacket: 0x5b3a22, trim: 0x8a6a3a, pants: 0x2f3a2c, accent: 0xa9c1e3, sleeves: 'jacket' },
-  engineer:  { skin: 0x9a6748, hair: 0x231710, jacket: 0x2b3038, trim: COPPER, pants: 0x1e2228, accent: 0x7fe3d4, sleeves: 'rolled' },
+  commander: { skin: 0xc68c69, lip: 0x8e4a44, iris: 0x4a2c1a, hair: 0x18110d, jacket: 0x1d1d22, shirt: 0x1d1d22, trim: GOLD, pants: 0x18181c, shoe: 0x0b0b0c },
+  pilot:     { skin: 0xdfae8c, lip: 0xa86a5c, iris: 0x4f7aa8, hair: 0x5b3a21, jacket: 0x5a3820, shirt: 0xd9ccb2, trim: 0x8a6a3a, pants: 0x2f3a2c, shoe: 0x3a2618 },
+  engineer:  { skin: 0x8c5a3c, lip: 0x6e3a30, iris: 0x2e1c12, hair: 0x1c130e, jacket: 0x3a4250, shirt: 0xe2dccd, trim: COPPER, pants: 0x262b33, shoe: 0x141518 },
 };
 function partSphere(r, mat, phiLen = PI * 2, thetaLen = PI, thetaStart = 0) {
   return new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16, 0, phiLen, thetaStart, thetaLen), mat);
 }
+// A human head shape: taller than wide, tapered jaw, chin forward, soft brow and eye sockets.
+function headGeometry(r = 0.1, seg = 40) {
+  const g = new THREE.SphereGeometry(r, seg, seg * 0.75), p = g.attributes.position, v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i).divideScalar(r);
+    let { x, y, z } = v;
+    x *= 0.86; y *= 1.16;
+    if (y < 0) { const t = Math.pow(-y / 1.16, 1.25); x *= 1 - 0.36 * t; if (z > 0) z *= 1 + 0.1 * t; else z *= 1 - 0.25 * t; }
+    if (z < 0) z *= 0.97;
+    if (y > 0.75) y = 0.75 + (y - 0.75) * 0.9;
+    for (const s of [-1, 1]) { const d = Math.hypot((x - s * 0.3) / 0.2, (y - 0.12) / 0.13); if (z > 0.6 && d < 1) z -= 0.05 * (1 - d * d); }
+    { const d = Math.hypot(x / 0.55, (y - 0.32) / 0.12); if (z > 0.7 && d < 1) z += 0.025 * (1 - d * d); }
+    p.setXYZ(i, x * r, y * r, z * r);
+  }
+  g.computeVertexNormals(); return g;
+}
+// Keep only the triangles whose centre passes the test (used to cut hair and stubble from a head shell).
+function carve(geo, keep) {
+  const src = geo.index ? geo.toNonIndexed() : geo, p = src.attributes.position, out = [], c = new THREE.Vector3(), a = new THREE.Vector3();
+  for (let i = 0; i < p.count; i += 3) {
+    c.set(0, 0, 0); for (let k = 0; k < 3; k++) c.add(a.fromBufferAttribute(p, i + k)); c.divideScalar(3);
+    if (keep(c)) for (let k = 0; k < 3; k++) out.push(p.getX(i + k), p.getY(i + k), p.getZ(i + k));
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(out, 3)); g.computeVertexNormals(); return g;
+}
+function limb(r1, r2, len, mat) {
+  const g = new THREE.Group();
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r2, r1, len, 18), mat); m.position.y = -len / 2; g.add(m);
+  const j = new THREE.Mesh(new THREE.SphereGeometry(r1, 18, 12), mat); g.add(j);
+  return g;
+}
+function makeHand(skin, side) {
+  const h = new THREE.Group(), fingers = [];
+  const palm = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), skin); palm.scale.set(0.038, 0.044, 0.019); palm.position.y = -0.042; h.add(palm);
+  [-1.5, -0.5, 0.5, 1.5].forEach((k, i) => {
+    const len = [0.026, 0.03, 0.028, 0.022][i];
+    const f = new THREE.Group(); f.position.set(k * 0.0155 * -side, -0.082, 0); h.add(f);
+    const s1 = new THREE.Mesh(new THREE.CapsuleGeometry(0.0072, len, 4, 8), skin); s1.position.y = -len / 2; f.add(s1);
+    const f2 = new THREE.Group(); f2.position.y = -len - 0.004; f.add(f2);
+    const s2 = new THREE.Mesh(new THREE.CapsuleGeometry(0.0066, len * 0.8, 4, 8), skin); s2.position.y = -len * 0.4; f2.add(s2);
+    fingers.push({ f, f2 });
+  });
+  const th = new THREE.Group(); th.position.set(side * 0.03, -0.03, 0.006); th.rotation.z = side * 0.75; h.add(th);
+  const t1 = new THREE.Mesh(new THREE.CapsuleGeometry(0.0085, 0.024, 4, 8), skin); t1.position.y = -0.016; th.add(t1);
+  return { h, fingers, thumb: th };
+}
 function makeCrew(spec) {
-  const L = LOOKS[spec.role];
-  const skin = std(L.skin, 0.62, 0.0, 0.25), hairM = std(L.hair, 0.7, 0.05, 0.3);
-  const jacket = std(L.jacket, spec.role === 'pilot' ? 0.75 : 0.45, spec.role === 'pilot' ? 0.05 : 0.2, 0.5);
-  const trim = spec.role === 'commander' ? MAT.gold : std(L.trim, 0.35, 0.8, 0.8);
-  const pants = std(L.pants, 0.7, 0.05, 0.3), boot = std(0x0d0d0f, 0.45, 0.2, 0.5);
+  const L = LOOKS[spec.role], role = spec.role;
+  const skin = std(L.skin, 0.78, 0.0, 0.35), hairM = std(L.hair, 0.72, 0.0, 0.35);
+  const jacket = std(L.jacket, 0.85, 0.0, 0.4);
+  const shirt = std(L.shirt, 0.8, 0, 0.25), trim = role === 'commander' ? MAT.gold : std(L.trim, 0.32, 0.85, 0.85);
+  const pants = std(L.pants, 0.72, 0.05, 0.3), shoe = std(L.shoe, 0.35, 0.15, 0.6);
   const [x, z] = polar(CHAIR_R, spec.ang);
   const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = faceCenter(x, z); scene.add(g);
 
@@ -579,82 +625,107 @@ function makeCrew(spec) {
   const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.38, 12), MAT.gold); post.position.y = 0.21; g.add(post);
   const base = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.28, 0.03, 24), MAT.leather); base.position.y = 0.015; g.add(base);
 
-  const hips = new THREE.Group(); hips.position.set(0, 0.5, 0.02); g.add(hips);
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.3, 6, 16), jacket); torso.position.y = 0.31; torso.scale.set(1.15, 1, 0.75); hips.add(torso);
-  // outfit details
-  if (spec.role === 'commander') {
-    for (const s of [-1, 1]) { const sb = box(0.1, 0.012, 0.07, MAT.gold, s * 0.13, 0.6, 0, hips); sb.rotation.z = -s * 0.25; }
-    const sash = box(0.022, 0.4, 0.008, MAT.gold, 0.02, 0.36, 0.118, hips); sash.rotation.z = 0.5;
-    const badge = new THREE.Mesh(new THREE.OctahedronGeometry(0.018, 0), MAT.gold); badge.position.set(-0.075, 0.5, 0.115); hips.add(badge);
-    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.07, 0.05, 20, 1, true), std(0x111114, 0.4, 0.2, 0.5, { side: THREE.DoubleSide })); collar.position.y = 0.66; hips.add(collar);
-    const collarRim = new THREE.Mesh(new THREE.TorusGeometry(0.063, 0.005, 6, 24), MAT.gold); collarRim.rotation.x = PI / 2; collarRim.position.y = 0.685; hips.add(collarRim);
-  } else if (spec.role === 'pilot') {
-    box(0.13, 0.36, 0.01, std(0xd8cbb0, 0.8, 0, 0.2), 0, 0.37, 0.114, hips); // open jacket, cream undershirt
-    for (const s of [-1, 1]) { const lap = box(0.06, 0.16, 0.012, jacket, s * 0.075, 0.5, 0.118, hips); lap.rotation.z = s * 0.35; }
-    const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.028, 8, 20), std(0x4b5a3a, 0.9, 0, 0.2)); scarf.rotation.x = PI / 2; scarf.position.y = 0.64; hips.add(scarf);
-    const patch = new THREE.Mesh(new THREE.CircleGeometry(0.03, 16), std(0xb07a3a, 0.6, 0.2, 0.4)); patch.position.set(-0.17, 0.52, 0.03); patch.rotation.y = -1.2; hips.add(patch);
-  } else {
-    box(0.15, 0.34, 0.01, std(0xe2dccd, 0.8, 0, 0.2), 0, 0.38, 0.113, hips); // shirt under the vest
-    for (const s of [-1, 1]) { const pipe = box(0.008, 0.36, 0.008, trim, s * 0.08, 0.38, 0.118, hips); pipe.rotation.z = s * 0.12; }
-    const collar = new THREE.Mesh(new THREE.TorusGeometry(0.066, 0.012, 8, 24), trim); collar.rotation.x = PI / 2; collar.position.y = 0.645; hips.add(collar);
-    const tool = box(0.03, 0.06, 0.02, trim, 0.09, 0.42, 0.12, hips); tool.rotation.z = 0.1;
-  }
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.043, 0.048, 0.1, 12), skin); neck.position.y = 0.69; hips.add(neck);
-
-  // head + face
-  const head = new THREE.Group(); head.position.y = 0.82; hips.add(head);
-  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.105, 28, 20), skin); skull.scale.set(0.9, 1.1, 0.97); head.add(skull);
-  const eyeW = std(0xf6f3ee, 0.3, 0, 0.3), eyeD = std(0x1b120c, 0.25, 0, 0.4), brow = hairM;
-  for (const s of [-1, 1]) {
-    const e = new THREE.Mesh(new THREE.SphereGeometry(0.0145, 12, 10), eyeW); e.position.set(s * 0.034, 0.012, 0.086); e.scale.z = 0.6; head.add(e);
-    const p = new THREE.Mesh(new THREE.SphereGeometry(0.008, 10, 8), eyeD); p.position.set(s * 0.034, 0.012, 0.094); head.add(p);
-    const b = box(0.032, 0.007, 0.008, brow, s * 0.035, 0.04, 0.09, head); b.rotation.z = -s * (spec.role === 'pilot' ? 0.18 : 0.08);
-    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.02, 10, 8), skin); ear.position.set(s * 0.093, 0.0, 0.0); ear.scale.set(0.5, 1, 0.8); head.add(ear);
-  }
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.014, 10, 8), skin); nose.position.set(0, -0.008, 0.1); nose.scale.set(0.9, 1.3, 1); head.add(nose);
-  const mouth = box(0.034, 0.006, 0.006, std(0x7a2f2a, 0.5, 0, 0.3), 0, -0.045, 0.092, head);
-  // hair: a cap that sits above the brows, plus the back of the head
-  const cap = partSphere(0.111, hairM, PI * 2, spec.role === 'engineer' ? 0.95 : 1.02); cap.scale.set(0.93, 1.1, 1.0); head.add(cap);
-  const back = partSphere(0.109, hairM, PI, spec.role === 'commander' ? PI * 0.55 : PI * 0.42, 0.5); back.rotation.y = PI; back.scale.set(0.93, 1.09, 1.0); head.add(back);
-  if (spec.role === 'commander') {
-    const bun = new THREE.Mesh(new THREE.SphereGeometry(0.045, 16, 12), hairM); bun.position.set(0, 0.075, -0.085); head.add(bun);
-    const pin = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.005, 6, 20), MAT.gold); pin.position.set(0, 0.075, -0.085); pin.rotation.x = 0.6; head.add(pin);
-    for (const s of [-1, 1]) { const ear = new THREE.Mesh(new THREE.SphereGeometry(0.006, 8, 6), MAT.gold); ear.position.set(s * 0.095, -0.025, 0.005); head.add(ear); }
-  } else if (spec.role === 'pilot') {
-    for (let i = 0; i < 9; i++) { const t = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), hairM); const a = (i / 9) * PI * 2; t.position.set(Math.cos(a) * 0.06, 0.1 + (i % 3) * 0.008, Math.sin(a) * 0.055); head.add(t); }
-    const stub = partSphere(0.104, std(0x3a2a1c, 0.95, 0, 0.1, { transparent: true, opacity: 0.45 }), PI, 0.75, PI - 0.95);
-    stub.scale.set(0.92, 1.1, 1.0); stub.position.z = 0.004; head.add(stub);
-  } else {
-    const band = new THREE.Mesh(new THREE.TorusGeometry(0.103, 0.008, 6, 32), std(0x2a2420, 0.5, 0.2, 0.5)); band.rotation.x = PI / 2 - 0.25; band.position.y = 0.06; head.add(band);
+  // body
+  const hips = new THREE.Group(); hips.position.set(0, 0.52, -0.02); g.add(hips);
+  const pelvis = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), pants); pelvis.scale.set(0.165, 0.09, 0.12); hips.add(pelvis);
+  const chest = new THREE.Group(); chest.position.y = 0.02; hips.add(chest);
+  const prof = [[0.135, 0], [0.13, 0.08], [0.14, 0.2], [0.158, 0.33], [0.166, 0.42], [0.16, 0.48], [0.12, 0.53], [0.06, 0.555], [0.0, 0.56]];
+  const torso = new THREE.Mesh(new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 40), jacket);
+  torso.scale.set(1.18, 1, 0.68); chest.add(torso);
+  const front = (w, h, y, mat, zz = 0.112) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat); m.position.set(0, y, zz); chest.add(m); return m; };
+  if (role === 'commander') {
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.066, 0.07, 24, 1, true), std(0x121215, 0.4, 0.15, 0.5, { side: THREE.DoubleSide })); col.position.y = 0.585; chest.add(col);
+    const colRim = new THREE.Mesh(new THREE.TorusGeometry(0.059, 0.004, 6, 32), MAT.gold); colRim.rotation.x = PI / 2; colRim.position.y = 0.62; chest.add(colRim);
+    for (const s of [-1, 1]) { const sb = box(0.1, 0.012, 0.075, MAT.gold, s * 0.135, 0.505, 0, chest); sb.rotation.z = -s * 0.32; }
+    const sash = box(0.024, 0.42, 0.006, MAT.gold, 0.01, 0.3, 0.113, chest); sash.rotation.z = 0.48;
+    const seam = box(0.004, 0.46, 0.004, MAT.gold, -0.035, 0.26, 0.114, chest);
+    const badge = new THREE.Mesh(new THREE.OctahedronGeometry(0.016, 0), MAT.gold); badge.position.set(-0.08, 0.42, 0.112); chest.add(badge);
+    const belt = new THREE.Mesh(new THREE.TorusGeometry(0.152, 0.012, 8, 40), MAT.gold); belt.rotation.x = PI / 2; belt.scale.set(1.18, 0.68, 1); belt.position.y = 0.04; chest.add(belt);
+  } else if (role === 'pilot') {
+    front(0.12, 0.42, 0.3, shirt, 0.113);
     for (const s of [-1, 1]) {
-      const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.02, 16), trim); lens.rotation.x = PI / 2 - 0.4; lens.position.set(s * 0.034, 0.075, 0.075); head.add(lens);
-      const glass = new THREE.Mesh(new THREE.CircleGeometry(0.017, 16), glowMat(0x7fe3d4, 0.8)); glass.position.set(s * 0.034, 0.083, 0.085); glass.rotation.x = -0.4; head.add(glass);
+      const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(s * 0.06, 0.02); sh.lineTo(s * 0.035, 0.17); sh.lineTo(0, 0.2); sh.closePath();
+      const lap = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: 0.01, bevelEnabled: false }), jacket); lap.position.set(s * 0.055, 0.32, 0.104); chest.add(lap);
+    }
+    const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.026, 10, 28), std(0x4b5a3a, 0.9, 0, 0.2)); scarf.rotation.x = PI / 2 - 0.15; scarf.position.y = 0.59; scarf.scale.set(1.0, 1, 0.8); chest.add(scarf);
+    const tail = box(0.05, 0.12, 0.02, std(0x4b5a3a, 0.9, 0, 0.2), 0.04, 0.47, 0.1, chest); tail.rotation.z = -0.25;
+    const patch = new THREE.Mesh(new THREE.CircleGeometry(0.028, 18), std(0xb07a3a, 0.55, 0.2, 0.5)); patch.position.set(-0.17, 0.43, 0.04); patch.rotation.y = -1.2; chest.add(patch);
+  } else {
+    front(0.13, 0.42, 0.31, shirt, 0.113);
+    for (const s of [-1, 1]) { const vest = box(0.07, 0.36, 0.012, jacket, s * 0.075, 0.27, 0.112, chest); vest.rotation.z = s * 0.06; const pipe = box(0.005, 0.36, 0.004, trim, s * 0.04, 0.27, 0.12, chest); pipe.rotation.z = s * 0.06; }
+    const col = new THREE.Mesh(new THREE.TorusGeometry(0.062, 0.011, 8, 28), shirt); col.rotation.x = PI / 2; col.position.y = 0.56; chest.add(col);
+    const belt = new THREE.Mesh(new THREE.TorusGeometry(0.152, 0.016, 8, 40), std(0x3b2a1e, 0.6, 0.1, 0.4)); belt.rotation.x = PI / 2; belt.scale.set(1.18, 0.68, 1); belt.position.y = 0.04; chest.add(belt);
+    for (const s of [-1, 1]) box(0.035, 0.05, 0.025, trim, s * 0.12, 0.03, 0.1, chest);
+  }
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.05, 0.12, 18), skin); neck.position.y = 0.6; chest.add(neck);
+
+  // head and face
+  const head = new THREE.Group(); head.position.y = 0.77; head.scale.setScalar(1.24); chest.add(head);
+  head.add(new THREE.Mesh(headGeometry(0.1), skin));
+  const eyes = [], lids = [];
+  const white = std(0xf3efe8, 0.25, 0, 0.5), irisM = std(L.iris, 0.3, 0, 0.6), black = std(0x050505, 0.2, 0, 0.6);
+  for (const s of [-1, 1]) {
+    const eg = new THREE.Group(); eg.position.set(s * 0.034, 0.01, 0.082); head.add(eg);
+    eg.add(new THREE.Mesh(new THREE.SphereGeometry(0.0165, 20, 16), white));
+    const iris = new THREE.Mesh(new THREE.CircleGeometry(0.0102, 24), irisM); iris.position.z = 0.0168; eg.add(iris);
+    const pup = new THREE.Mesh(new THREE.CircleGeometry(0.0055, 18), black); pup.position.z = 0.017; eg.add(pup);
+    const glint = new THREE.Mesh(new THREE.CircleGeometry(0.0024, 10), glowMat(0xffffff, 0.95)); glint.position.set(0.003, 0.003, 0.0172); eg.add(glint);
+    eyes.push(eg);
+    const lid = new THREE.Mesh(new THREE.SphereGeometry(0.0175, 20, 10, 0, PI * 2, 0, PI * 0.45), skin); lid.position.copy(eg.position); lid.rotation.x = 0.3; head.add(lid); lids.push(lid);
+    const lash = box(0.03, 0.003, 0.004, role === 'commander' ? black : hairM, s * 0.034, 0.026, 0.096, head); lash.rotation.z = -s * 0.08;
+    const browG = new THREE.Mesh(new THREE.TorusGeometry(0.02, role === 'pilot' ? 0.0048 : 0.0038, 8, 16, 1.6), hairM);
+    browG.position.set(s * 0.035, 0.04, 0.094); browG.rotation.set(-0.15, 0, PI / 2 - 0.85 + s * 0.12); head.add(browG); browG.userData.y0 = browG.position.y;
+    eyes[eyes.length - 1].userData.brow = browG;
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), skin); ear.scale.set(0.009, 0.026, 0.017); ear.position.set(s * 0.087, 0.0, -0.008); ear.rotation.y = s * 0.3; head.add(ear);
+  }
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.0105, 16, 12), skin); tip.position.set(0, -0.016, 0.1); tip.scale.set(1.1, 0.95, 0.9); head.add(tip);
+  const lipM = std(L.lip, 0.4, 0, 0.45);
+  const upperLip = new THREE.Mesh(new THREE.CapsuleGeometry(0.0038, 0.024, 4, 10), lipM); upperLip.rotation.z = PI / 2; upperLip.position.set(0, -0.043, 0.094); upperLip.scale.set(1, 1, 0.8); head.add(upperLip);
+  const lowerLip = new THREE.Mesh(new THREE.CapsuleGeometry(0.0048, 0.02, 4, 10), lipM); lowerLip.rotation.z = PI / 2; lowerLip.position.set(0, -0.051, 0.092); lowerLip.scale.set(1, 1, 0.8); head.add(lowerLip);
+  const mouthIn = new THREE.Mesh(new THREE.CircleGeometry(0.011, 16), std(0x2a0f0d, 0.9, 0, 0.1)); mouthIn.position.set(0, -0.047, 0.0925); mouthIn.scale.set(1.2, 0.05, 1); head.add(mouthIn);
+
+  // hair, cut from a shell around the head
+  const shell = (sc, keep, mat) => { const geo = carve(headGeometry(0.1 * sc, 136), keep); const m = new THREE.Mesh(geo, mat); head.add(m); return m; };
+  const R = 0.1;
+  if (role === 'commander') {
+    shell(1.075, (c) => { const y = c.y / R, z = c.z / R, x = c.x / R; return y > 0.66 - 0.3 * Math.abs(x) - (x > 0 ? 0.08 : 0) || (z < 0.15 && y > -0.55) || (Math.abs(x) > 0.7 && z < 0.4 && y > -0.1); }, hairM);
+    const bun = new THREE.Mesh(new THREE.SphereGeometry(0.042, 20, 14), hairM); bun.position.set(0, 0.06, -0.1); bun.scale.set(1, 0.9, 0.85); head.add(bun);
+    const pin = new THREE.Mesh(new THREE.TorusGeometry(0.036, 0.004, 6, 24), MAT.gold); pin.position.set(0, 0.06, -0.1); pin.rotation.x = 0.4; head.add(pin);
+    for (const s of [-1, 1]) { const ring = new THREE.Mesh(new THREE.TorusGeometry(0.006, 0.0015, 6, 14), MAT.gold); ring.position.set(s * 0.088, -0.03, -0.004); ring.rotation.y = PI / 2; head.add(ring); }
+  } else if (role === 'pilot') {
+    shell(1.07, (c) => { const y = c.y / R, z = c.z / R; return y > 0.5 || (z < 0.05 && y > -0.35); }, hairM);
+    for (let i = 0; i < 6; i++) {
+      const tuft = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), hairM);
+      tuft.scale.set(0.045, 0.02, 0.06); tuft.position.set(-0.04 + i * 0.016, 0.1 - Math.abs(i - 2.5) * 0.004, 0.012 + (i % 2) * 0.01); tuft.rotation.set(-0.35, (i - 2.5) * 0.15, (i - 2.5) * 0.12); head.add(tuft);
+    }
+    shell(1.012, (c) => { const y = c.y / R, z = c.z / R, x = c.x / R; return y < -0.2 && z > -0.25 && !(Math.abs(x) < 0.3 && y > -0.62 && z > 0.6); }, std(0x4a3220, 0.95, 0, 0.1, { transparent: true, opacity: 0.32, depthWrite: false }));
+  } else {
+    shell(1.06, (c) => { const y = c.y / R, z = c.z / R; return y > 0.55 || (z < -0.05 && y > -0.2); }, hairM);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.007, 8, 40), std(0x2a2420, 0.5, 0.2, 0.5)); band.rotation.x = PI / 2 - 0.3; band.position.y = 0.062; band.scale.set(0.9, 1.05, 1); head.add(band);
+    for (const s of [-1, 1]) {
+      const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.022, 0.018, 18), trim); lens.rotation.x = PI / 2 - 0.5; lens.position.set(s * 0.032, 0.083, 0.07); head.add(lens);
+      const gl = new THREE.Mesh(new THREE.CircleGeometry(0.016, 18), glowMat(0x7fe3d4, 0.75)); gl.position.set(s * 0.032, 0.09, 0.078); gl.rotation.x = -0.5; head.add(gl);
     }
   }
 
-  // arms
+  // arms and hands
   const arms = [];
-  const forearmMat = L.sleeves === 'rolled' ? skin : jacket;
+  const foreMat = role === 'engineer' ? skin : jacket;
   for (const side of [-1, 1]) {
-    const sh = new THREE.Group(); sh.position.set(side * 0.2, 0.53, 0); hips.add(sh);
-    const ua = new THREE.Mesh(new THREE.CapsuleGeometry(0.047, 0.2, 4, 10), jacket); ua.position.y = -0.14; sh.add(ua);
-    const elbow = new THREE.Group(); elbow.position.y = -0.29; sh.add(elbow);
-    const fa = new THREE.Mesh(new THREE.CapsuleGeometry(0.041, 0.18, 4, 10), forearmMat); fa.position.y = -0.13; elbow.add(fa);
-    if (L.sleeves === 'rolled') { const roll = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.014, 6, 18), jacket); roll.rotation.x = PI / 2; roll.position.y = -0.02; elbow.add(roll); }
-    const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.007, 6, 18), trim); cuff.rotation.x = PI / 2; cuff.position.y = -0.22; elbow.add(cuff);
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.044, 14, 10), skin); hand.position.y = -0.27; hand.scale.set(0.85, 1.15, 0.55); elbow.add(hand);
-    if (spec.role === 'engineer' && side < 0) {
-      const holo = new THREE.Mesh(new THREE.PlaneGeometry(0.08, 0.05), glowMat(0x7fe3d4, 0.55)); holo.position.set(0, -0.2, 0.06); holo.rotation.x = -0.3; elbow.add(holo);
-    }
-    sh.rotation.set(-0.7, 0, side * 0.08); elbow.rotation.x = -0.85;
-    arms.push({ side, sh, el: elbow });
+    const sh = limb(0.046, 0.04, 0.27, jacket); sh.position.set(side * 0.185, 0.495, 0); chest.add(sh);
+    const el = limb(0.041, 0.034, 0.24, foreMat); el.position.y = -0.27; sh.add(el);
+    if (role === 'engineer') { const roll = new THREE.Mesh(new THREE.TorusGeometry(0.044, 0.013, 8, 20), shirt); roll.rotation.x = PI / 2; roll.position.y = -0.025; el.add(roll); }
+    const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.036, 0.006, 6, 20), trim); cuff.rotation.x = PI / 2; cuff.position.y = -0.225; el.add(cuff);
+    const wrist = new THREE.Group(); wrist.position.y = -0.245; el.add(wrist);
+    const hand = makeHand(skin, side); wrist.add(hand.h);
+    if (role === 'engineer' && side < 0) { const holo = new THREE.Mesh(new THREE.PlaneGeometry(0.07, 0.045), glowMat(0x7fe3d4, 0.5)); holo.position.set(0, -0.19, 0.045); holo.rotation.x = -0.25; el.add(holo); }
+    arms.push({ side, sh, el, wrist, hand });
   }
   for (const side of [-1, 1]) {
-    const th = new THREE.Mesh(new THREE.CapsuleGeometry(0.068, 0.3, 4, 10), pants); th.rotation.x = PI / 2; th.position.set(side * 0.095, 0.0, 0.2); hips.add(th);
-    const sn = new THREE.Mesh(new THREE.CapsuleGeometry(0.058, 0.3, 4, 10), pants); sn.position.set(side * 0.095, -0.23, 0.4); hips.add(sn);
-    const bt = box(0.09, 0.07, 0.17, boot, side * 0.095, -0.45, 0.44, hips);
+    const th = limb(0.075, 0.06, 0.4, pants); th.position.set(side * 0.095, 0, 0.01); th.rotation.x = -PI / 2 + 0.05; hips.add(th);
+    const sn = limb(0.056, 0.045, 0.43, pants); sn.position.y = -0.4; sn.rotation.x = PI / 2 - 0.1; th.add(sn);
+    const ft = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), shoe); ft.scale.set(0.048, 0.035, 0.12); ft.position.set(0, -0.44, 0.05); sn.add(ft);
   }
-
   // placard on the directors' table, facing you
   const [px, pz] = polar(BOARD_T.r0 + 0.13, spec.ang);
   const plac = new THREE.Group(); plac.position.set(px, BOARD_T.y, pz); plac.rotation.y = faceCenter(px, pz); scene.add(plac);
@@ -672,7 +743,7 @@ function makeCrew(spec) {
   const proxy = addTarget(new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 8), ghostMat), 'director', null);
   proxy.position.set(0, 1.0, 0.05); g.add(proxy);
 
-  const D = { spec, g, hips, head, mouth, arms, nod: 0, proxy };
+  const D = { spec, g, hips, chest, head, eyes, lids, lowerLip, mouthIn, arms, nod: 0, proxy, blink: 2 + Math.random() * 3, blinkT: 0, talk: 0 };
   proxy.userData.target.ref = D;
   crew.push(D); return D;
 }
@@ -699,40 +770,61 @@ function setSpeaker(name) {
   document.querySelectorAll('#speakRow button').forEach((b) => b.classList.toggle('on', (b.dataset.sp || null) === speaker));
   consoleButtons.forEach((b) => b.userData.setOn((b.userData.sp || null) === speaker));
 }
+const POSE = {
+  rest: { sh: [-0.42, 0.05], el: -1.38, twist: 0, curl: 0.55 },
+};
 function animateCrew(t, dt) {
-  const cam = camera.getWorldPosition(V()), k = Math.min(1, dt * 5);
+  const cam = camera.getWorldPosition(V()), k = Math.min(1, dt * 5), k2 = Math.min(1, dt * 8);
   const S = crew.find((x) => x.spec.name === speaker);
   for (const D of crew) {
-    const talking = D === S;
+    const talking = D === S, ph = D.spec.phase;
+    D.talk = lerp(D.talk, talking ? 1 : 0, Math.min(1, dt * 3));
     const target = S && !talking ? S.head.getWorldPosition(V()) : cam;
+    // head and body turn toward whoever matters
     const local = D.g.worldToLocal(target.clone());
     const yaw = clamp(Math.atan2(local.x, local.z), -1.0, 1.0);
-    D.head.rotation.y = lerp(D.head.rotation.y, yaw * 0.75, k);
-    D.hips.rotation.y = lerp(D.hips.rotation.y, yaw * 0.22, k);
-    const ph = D.spec.phase;
+    D.hips.rotation.y = lerp(D.hips.rotation.y, yaw * 0.18, k * 0.5);
+    D.head.rotation.y = lerp(D.head.rotation.y, yaw * 0.6 + 0.04 * Math.sin(t * 0.37 + ph), k);
     D.nod = Math.max(0, D.nod - dt);
-    const nod = D.nod > 0 ? 0.18 * Math.sin((1 - D.nod) * PI * 3) : 0;
-    if (talking) {
-      D.head.rotation.x = lerp(D.head.rotation.x, 0.05 * Math.sin(t * 4.7 + ph) + nod, k);
-      for (const a of D.arms) {
-        const o = a.side > 0 ? 0 : 1.9;
-        a.sh.rotation.x = lerp(a.sh.rotation.x, -0.95 + 0.28 * Math.sin(t * 2.4 + o + ph), k);
-        a.sh.rotation.z = lerp(a.sh.rotation.z, a.side * (0.2 + 0.14 * Math.sin(t * 1.7 + o)), k);
-        a.el.rotation.x = lerp(a.el.rotation.x, -0.9 + 0.4 * Math.sin(t * 3.1 + o * 1.3), k);
-      }
-      D.mouth.scale.y = 1 + 3.2 * Math.abs(Math.sin(t * 11 + Math.sin(t * 3) * 2));
-    } else {
-      D.head.rotation.x = lerp(D.head.rotation.x, 0.02 * Math.sin(t * 0.8 + ph) + nod, k);
-      for (const a of D.arms) {
-        a.sh.rotation.x = lerp(a.sh.rotation.x, -0.7, k * 0.6);
-        a.sh.rotation.z = lerp(a.sh.rotation.z, a.side * 0.08, k * 0.6);
-        a.el.rotation.x = lerp(a.el.rotation.x, -0.85, k * 0.6);
-      }
-      D.mouth.scale.y = lerp(D.mouth.scale.y, 1, k);
+    const nod = D.nod > 0 ? 0.16 * Math.sin((1 - D.nod) * PI * 3) : 0;
+    const hl = D.head.worldToLocal(target.clone());
+    const pitch = clamp(-Math.atan2(hl.y, Math.hypot(hl.x, hl.z)) * 0.5, -0.2, 0.25);
+    D.head.rotation.x = lerp(D.head.rotation.x, pitch + nod + (talking ? 0.05 * Math.sin(t * 4.3 + ph) : 0.015 * Math.sin(t * 0.7 + ph)), k);
+    D.head.rotation.z = lerp(D.head.rotation.z, talking ? 0.05 * Math.sin(t * 1.3 + ph) : 0.02 * Math.sin(t * 0.4 + ph), k);
+    // breathing
+    const br = Math.sin(t * (talking ? 2.2 : 1.5) + ph);
+    D.chest.scale.set(1 + 0.008 * br, 1 + 0.006 * br, 1 + 0.014 * br);
+    // eyes follow the target; blink every few seconds
+    for (const e of D.eyes) {
+      const el = e.worldToLocal(target.clone()); e.userData.ry = clamp(Math.atan2(el.x, el.z), -0.45, 0.45); e.userData.rx = clamp(-Math.atan2(el.y, Math.hypot(el.x, el.z)), -0.3, 0.3);
+      e.rotation.y = lerp(e.rotation.y, e.userData.ry, k2); e.rotation.x = lerp(e.rotation.x, e.userData.rx, k2);
+      const b = e.userData.brow; b.position.y = b.userData.y0 + 0.004 * D.talk * Math.max(0, Math.sin(t * 1.9 + ph));
+    }
+    D.blink -= dt;
+    if (D.blink <= 0) { D.blinkT = 0.16; D.blink = 2.5 + Math.random() * 3.5; }
+    D.blinkT = Math.max(0, D.blinkT - dt);
+    const closed = D.blinkT > 0 ? Math.sin((1 - D.blinkT / 0.16) * PI) : 0;
+    for (const l of D.lids) l.rotation.x = 0.3 + closed * 1.3;
+    // mouth
+    const open = D.talk * Math.max(0, 0.55 * Math.sin(t * 13 + Math.sin(t * 4.1) * 2) + 0.45 * Math.sin(t * 7.3 + ph));
+    D.mouthIn.scale.y = lerp(D.mouthIn.scale.y, 0.05 + open * 0.9, k2);
+    D.lowerLip.position.y = lerp(D.lowerLip.position.y, -0.051 - open * 0.01, k2);
+    // arms: resting on the table, or gesturing while talking
+    for (const a of D.arms) {
+      const o = a.side > 0 ? 0 : 2.1, w = D.talk;
+      const shx = lerp(POSE.rest.sh[0], -0.8 + 0.22 * Math.sin(t * 2.1 + o + ph), w);
+      const shz = lerp(a.side * POSE.rest.sh[1], a.side * (0.22 + 0.12 * Math.sin(t * 1.6 + o)), w);
+      const elx = lerp(POSE.rest.el, -1.15 + 0.35 * Math.sin(t * 2.7 + o * 1.3), w);
+      a.sh.rotation.x = lerp(a.sh.rotation.x, shx, k); a.sh.rotation.z = lerp(a.sh.rotation.z, shz, k);
+      a.el.rotation.x = lerp(a.el.rotation.x, elx, k);
+      a.el.rotation.y = lerp(a.el.rotation.y, -a.side * w * (0.9 + 0.3 * Math.sin(t * 1.4 + o)), k);
+      a.wrist.rotation.x = lerp(a.wrist.rotation.x, lerp(0.15, -0.25 + 0.2 * Math.sin(t * 3 + o), w), k);
+      const curl = lerp(POSE.rest.curl + 0.05 * Math.sin(t * 0.5 + o), 0.12 + 0.1 * Math.sin(t * 2.3 + o), w);
+      a.hand.fingers.forEach((f, i) => { f.f.rotation.x = lerp(f.f.rotation.x, curl * (0.9 + i * 0.08), k); f.f2.rotation.x = lerp(f.f2.rotation.x, curl * 1.1, k); });
     }
   }
   if (S) {
-    const tgt = S.head.getWorldPosition(V()).add(new THREE.Vector3(0, 0.32 + 0.025 * Math.sin(t * 2.5), 0));
+    const tgt = S.head.getWorldPosition(V()).add(new THREE.Vector3(0, 0.3 + 0.025 * Math.sin(t * 2.5), 0));
     if (!marker.visible) { marker.position.copy(tgt); marker.visible = true; }
     marker.position.lerp(tgt, Math.min(1, dt * 6)); marker.rotation.y += dt * 1.6;
     speakBanner.position.copy(marker.position).add(new THREE.Vector3(0, 0.22, 0));
