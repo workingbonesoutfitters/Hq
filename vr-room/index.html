@@ -14,7 +14,7 @@ html,body{margin:0;height:100%;background:#050506;color:var(--text);font:15px/1.
 .badge{pointer-events:auto;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;color:var(--text);text-decoration:none}
 .badge b{color:var(--gold2);font-weight:600}
 .badge.demo{background:var(--gold);border-color:var(--gold);color:#16120a;font-weight:700}
-.dock{position:fixed;left:50%;transform:translateX(-50%);bottom:max(14px,env(safe-area-inset-bottom));width:min(780px,calc(100% - 32px));background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:10px;display:flex;flex-direction:column;gap:8px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.dock{position:fixed;left:50%;transform:translateX(-50%);bottom:max(14px,env(safe-area-inset-bottom));width:min(820px,calc(100% - 32px));background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:10px;display:flex;flex-direction:column;gap:8px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 .row{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;align-items:center}
 .row::-webkit-scrollbar{display:none}
 .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);padding:0 4px;white-space:nowrap}
@@ -53,7 +53,7 @@ button.badge.signed{border-color:var(--gold);color:var(--gold2)}
 
 <div class="top">
   <a class="badge" href="../">← Business HQ</a>
-  <span class="badge"><b>Executive Office</b> · Stage 1 preview</span>
+  <span class="badge"><b>Executive Office</b> · preview v2</span>
   <span class="badge demo">DEMO · nothing here saves yet</span>
   <button class="badge" id="authBadge" type="button">Sign in with phone code</button>
 </div>
@@ -68,8 +68,9 @@ button.badge.signed{border-color:var(--gold);color:var(--gold2)}
 <div class="dock">
   <div class="row" id="stationRow"><button class="vr" id="enterVR" disabled>Checking VR…</button><span class="lbl">Go to</span></div>
   <div class="row" id="speakRow"><span class="lbl">Demo · who's speaking</span></div>
+  <div class="row" id="seatRow"><span class="lbl">Desk height in VR</span><button data-seat="sit">Sitting</button><button data-seat="stand">Standing</button><button data-seat="down">Desk ▼</button><button data-seat="up">Desk ▲</button></div>
   <div class="idea" id="ideaRow" hidden><input id="ideaIn" maxlength="70" placeholder="Type a brainstorm idea…" aria-label="New brainstorm idea"><button id="ideaAdd">Add note</button></div>
-  <div class="hint" id="hint">Drag to look · tap a gold floor ring to move · drag a document into a box</div>
+  <div class="hint" id="hint">Drag to look · tap a gold floor ring to move · drag a document into a box, onto a director, or into the trash</div>
 </div>
 
 <div id="boot">Opening the executive office…<small>Loading the 3D engine</small></div>
@@ -83,30 +84,38 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
 
-// ---------- constants ----------
+// ================= constants =================
 const $ = (s) => document.querySelector(s);
 const PI = Math.PI;
 const GOLD = 0xc9a24a, GOLD_HI = 0xf0d48a, COPPER = 0xe0794a;
 const SERIF = "Georgia, 'Times New Roman', serif";
 const SANS = "-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif";
-const TABLE = { y: 0.76, x0: -1.4, x1: 1.4, z0: -2.05, z1: -0.55 };
-const DIRECTOR_Z = -2.45;
 const V = () => new THREE.Vector3();
+const clamp = THREE.MathUtils.clamp;
+const lerp = (a, b, k) => a + (b - a) * k;
+
+// Your desk: a curved arc wrapping around your chair at the origin, facing -z.
+const DESK = { y: 0.74, r0: 0.52, r1: 1.18, half: 1.15 };
+// The directors' crescent table across from you.
+const BOARD_T = { y: 0.74, r0: 1.62, r1: 1.98, half: 0.62 };
+const CHAIR_R = 2.45;
+const polar = (r, a) => [r * Math.sin(a), -r * Math.cos(a)]; // angle 0 = straight ahead
+const faceCenter = (x, z) => Math.atan2(-x, -z);            // yaw so +z faces you
 
 const STATIONS = [
-  { id: 'desk',       name: 'Executive Desk',      pos: [0, 0, 0],      yaw: 0,      eye: 1.22, pitch: -0.30 },
-  { id: 'laser',      name: 'Laser Bench',         pos: [-4.9, 0, -3.2], yaw: PI / 2,  eye: 1.6,  pitch: -0.45 },
-  { id: 'book',       name: 'Book Stand',          pos: [-4.9, 0, 1.6],  yaw: PI / 2,  eye: 1.6,  pitch: -0.35 },
-  { id: 'apparel',    name: 'Apparel Corner',      pos: [4.9, 0, -3.2],  yaw: -PI / 2, eye: 1.6,  pitch: -0.12 },
-  { id: 'brainstorm', name: 'Brainstorm Wall',     pos: [5.0, 0, 1.8],   yaw: -PI / 2, eye: 1.6,  pitch: 0 },
-  { id: 'wall',       name: 'Pipeline & Trophies', pos: [0, 0, 2.6],     yaw: PI,      eye: 1.6,  pitch: 0 },
+  { id: 'desk',       name: 'Executive Desk',      pos: [0, 0, 0],       yaw: 0,      eye: 1.2, pitch: -0.32 },
+  { id: 'laser',      name: 'Laser Bench',         pos: [-4.9, 0, -3.2], yaw: PI / 2,  eye: 1.6, pitch: -0.45 },
+  { id: 'book',       name: 'Book Stand',          pos: [-4.9, 0, 1.6],  yaw: PI / 2,  eye: 1.6, pitch: -0.35 },
+  { id: 'apparel',    name: 'Apparel Corner',      pos: [4.9, 0, -3.2],  yaw: -PI / 2, eye: 1.6, pitch: -0.12 },
+  { id: 'brainstorm', name: 'Brainstorm Wall',     pos: [5.0, 0, 1.8],   yaw: -PI / 2, eye: 1.6, pitch: 0 },
+  { id: 'wall',       name: 'Sales & Pipeline',    pos: [0, 0, -3.7],    yaw: 0,      eye: 1.6, pitch: 0.05 },
 ];
-const DIRECTORS = [
-  { name: 'Claude', title: 'Development Director', accent: 0xe8a070, x: -0.95, phase: 0.0 },
-  { name: 'Ava',    title: 'Executive Director',   accent: 0xf4e2b4, x: 0,     phase: 1.3 },
-  { name: 'Bob',    title: 'Marketing Director',   accent: 0xa9c1e3, x: 0.95,  phase: 2.6 },
+const CREW = [
+  { name: 'Claude', title: 'Development Director', ang: -0.4, phase: 0.0, role: 'engineer' },
+  { name: 'Ava',    title: 'Executive Director',   ang: 0,    phase: 1.3, role: 'commander' },
+  { name: 'Bob',    title: 'Marketing Director',   ang: 0.4,  phase: 2.6, role: 'pilot' },
 ];
-// Preview copies of documents already in the Handoffs tray (titles only, nothing is linked yet).
+// Preview copies of documents already in the Handoffs tray (titles only, not linked yet).
 const DOCS = [
   { type: 'PLAN',       title: 'Business HQ next-generation plan', from: 'Claude', to: 'Ava' },
   { type: 'PLAN',       title: 'VR Boardroom plan',                from: 'Claude', to: 'Ava' },
@@ -115,14 +124,14 @@ const DOCS = [
   { type: 'LASER FILE', title: 'Sample vector · test sign',        from: 'Sample', to: 'Michael' },
 ];
 
-// ---------- renderer / scene ----------
+// ================= renderer / scene =================
 const canvas = $('#c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
+renderer.toneMappingExposure = 1.05;
 renderer.xr.enabled = true;
 renderer.xr.setReferenceSpaceType('local-floor');
 if (renderer.xr.setFoveation) renderer.xr.setFoveation(1);
@@ -133,56 +142,52 @@ scene.background = new THREE.Color(0xd9d1c2);
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.03, 60);
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.05, 40);
 camera.rotation.order = 'YXZ';
 const rig = new THREE.Group();
 rig.add(camera);
 scene.add(rig);
 
-// ---------- materials ----------
-const std = (color, roughness, metalness, envMapIntensity = 0.35) =>
-  new THREE.MeshStandardMaterial({ color, roughness, metalness, envMapIntensity });
+// ================= materials =================
+const std = (color, roughness, metalness, envMapIntensity = 0.35, extra = {}) =>
+  new THREE.MeshStandardMaterial({ color, roughness, metalness, envMapIntensity, ...extra });
 const MAT = {
-  floor: std(0xcdc2ad, 0.3, 0.05, 0.5),
-  rug: std(0x18181b, 0.95, 0.0, 0.15),
+  floor: std(0x08080a, 0.16, 0.35, 0.9),
   wall: std(0xeee5d1, 0.9, 0.0, 0.3),
   ceiling: std(0xf6f1e8, 0.95, 0.0, 0.3),
   gold: std(GOLD, 0.24, 1.0, 1.1),
   bronze: std(0x5a4a2a, 0.35, 1.0, 0.7),
-  glass: std(0x060608, 0.05, 0.75, 1.0),
-  leather: std(0x111113, 0.55, 0.05, 0.3),
-  body: std(0x1e1e23, 0.38, 0.35, 0.65),
-  form: std(0x2a2a2f, 0.5, 0.2, 0.5),
+  glass: std(0x060608, 0.06, 0.7, 1.0),
+  leather: std(0x141416, 0.55, 0.05, 0.3),
   bench: std(0x19191c, 0.6, 0.2, 0.4),
+  form: std(0x2a2a2f, 0.5, 0.2, 0.5),
+  paperBall: std(0xefe9dc, 0.95, 0.0, 0.2),
+  noteBall: std(0xf1dc9c, 0.95, 0.0, 0.2),
 };
 const glowMat = (color, opacity = 1) =>
   new THREE.MeshBasicMaterial({ color, transparent: true, opacity, toneMapped: false, depthWrite: opacity >= 1 });
+const ghostMat = new THREE.MeshBasicMaterial({ visible: false });
+const decal = (m) => { m.polygonOffset = true; m.polygonOffsetFactor = -2; m.polygonOffsetUnits = -2; return m; };
 
 function box(w, h, d, mat, x = 0, y = 0, z = 0, parent = scene) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-  m.position.set(x, y, z);
-  parent.add(m);
-  return m;
+  m.position.set(x, y, z); parent.add(m); return m;
 }
 
-// ---------- canvas text helpers ----------
+// ================= canvas helpers =================
 function rr(c, x, y, w, h, r) {
   c.beginPath();
   c.moveTo(x + r, y); c.lineTo(x + w - r, y); c.quadraticCurveTo(x + w, y, x + w, y + r);
   c.lineTo(x + w, y + h - r); c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
   c.lineTo(x + r, y + h); c.quadraticCurveTo(x, y + h, x, y + h - r);
-  c.lineTo(x, y + r); c.quadraticCurveTo(x, y, x + r, y);
-  c.closePath();
+  c.lineTo(x, y + r); c.quadraticCurveTo(x, y, x + r, y); c.closePath();
 }
 function wrap(c, text, x, y, maxW, lh, maxLines = 6) {
-  const words = String(text).split(/\s+/);
-  let line = '', n = 0;
+  const words = String(text).split(/\s+/); let line = '', n = 0;
   for (const w of words) {
     const t = line ? line + ' ' + w : w;
-    if (c.measureText(t).width > maxW && line) {
-      c.fillText(line, x, y); y += lh; line = w;
-      if (++n >= maxLines) return y;
-    } else line = t;
+    if (c.measureText(t).width > maxW && line) { c.fillText(line, x, y); y += lh; line = w; if (++n >= maxLines) return y; }
+    else line = t;
   }
   if (line) { c.fillText(line, x, y); y += lh; }
   return y;
@@ -191,67 +196,43 @@ function canvasTex(wPx, hPx, draw) {
   const cv = document.createElement('canvas');
   cv.width = Math.min(2048, Math.max(16, Math.round(wPx)));
   cv.height = Math.min(2048, Math.max(16, Math.round(hPx)));
-  const ctx = cv.getContext('2d');
-  draw(ctx, cv.width, cv.height);
+  const ctx = cv.getContext('2d'); draw(ctx, cv.width, cv.height);
   const tex = new THREE.CanvasTexture(cv);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = maxAniso;
-  tex.userData = { cv, ctx };
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = maxAniso; tex.userData = { cv, ctx };
   return tex;
 }
-function repaint(tex, draw) {
-  const { cv, ctx } = tex.userData;
-  ctx.clearRect(0, 0, cv.width, cv.height);
-  draw(ctx, cv.width, cv.height);
-  tex.needsUpdate = true;
-}
+function repaint(tex, draw) { const { cv, ctx } = tex.userData; ctx.clearRect(0, 0, cv.width, cv.height); draw(ctx, cv.width, cv.height); tex.needsUpdate = true; }
 function labelPlane(w, h, draw, { px = 1000, transparent = true, side = THREE.FrontSide } = {}) {
   const tex = canvasTex(w * px, h * px, draw);
   const mat = new THREE.MeshBasicMaterial({ map: tex, transparent, toneMapped: false, side });
   const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
-  m.userData.tex = tex;
-  m.userData.draw = draw;
-  return m;
+  m.userData.tex = tex; return m;
 }
 function panelBg(c, w, h, { fill = 'rgba(10,10,12,0.9)', stroke = '#c9a24a', radius = 0.08 } = {}) {
   const r = Math.min(w, h) * radius, lw = Math.max(3, h * 0.02);
-  rr(c, lw, lw, w - lw * 2, h - lw * 2, r);
-  c.fillStyle = fill; c.fill();
-  c.strokeStyle = stroke; c.lineWidth = lw; c.stroke();
+  rr(c, lw, lw, w - lw * 2, h - lw * 2, r); c.fillStyle = fill; c.fill(); c.strokeStyle = stroke; c.lineWidth = lw; c.stroke();
 }
-function sprite(text, sub) {
+function sprite(text) {
   const tex = canvasTex(1024, 256, (c, w, h) => {
-    panelBg(c, w, h, { radius: 0.3 });
-    c.textAlign = 'center';
-    c.fillStyle = '#e6c878';
-    c.font = `600 ${sub ? 84 : 96}px ${SERIF}`;
-    c.fillText(text, w / 2, sub ? h * 0.5 : h * 0.62);
-    if (sub) { c.font = `500 38px ${SANS}`; c.fillStyle = '#c9bea4'; c.fillText(sub, w / 2, h * 0.8); }
+    panelBg(c, w, h, { radius: 0.3 }); c.textAlign = 'center'; c.fillStyle = '#e6c878';
+    c.font = `600 96px ${SERIF}`; c.fillText(text, w / 2, h * 0.62);
   });
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, toneMapped: false, transparent: true, depthWrite: false }));
-  s.scale.set(1.15, 0.29, 1);
-  return s;
+  s.scale.set(1.15, 0.29, 1); return s;
 }
 
-// ---------- interaction registry ----------
+// ================= interaction registry =================
 const hitables = [];
 function register(mesh, kind, owner, extra = {}) {
-  mesh.userData.kind = kind;
-  mesh.userData.owner = owner;
-  Object.assign(mesh.userData, extra);
-  hitables.push(mesh);
-  return mesh;
+  mesh.userData.kind = kind; mesh.userData.owner = owner; Object.assign(mesh.userData, extra);
+  hitables.push(mesh); return mesh;
 }
 function isShown(o) { while (o) { if (!o.visible) return false; o = o.parent; } return true; }
-
-function makeButton(w, h, text, onPress, { sub = '', parent = scene } = {}) {
+function makeButton(w, h, text, onPress, { parent = scene } = {}) {
   const draw = (c, W, H, on) => {
     panelBg(c, W, H, { fill: on ? '#c9a24a' : 'rgba(18,18,21,0.95)', radius: 0.25 });
-    c.textAlign = 'center';
-    c.fillStyle = on ? '#16120a' : '#f0e6cc';
-    c.font = `600 ${H * (sub ? 0.34 : 0.42)}px ${SANS}`;
-    c.fillText(text, W / 2, sub ? H * 0.5 : H * 0.64);
-    if (sub) { c.font = `500 ${H * 0.2}px ${SANS}`; c.fillStyle = on ? '#2a210c' : '#a59f92'; c.fillText(sub, W / 2, H * 0.8); }
+    c.textAlign = 'center'; c.fillStyle = on ? '#16120a' : '#f0e6cc';
+    c.font = `600 ${H * 0.42}px ${SANS}`; c.fillText(text, W / 2, H * 0.64);
   };
   const m = labelPlane(w, h, (c, W, H) => draw(c, W, H, false), { px: 2000 });
   m.userData.setOn = (on) => repaint(m.userData.tex, (c, W, H) => draw(c, W, H, on));
@@ -259,63 +240,63 @@ function makeButton(w, h, text, onPress, { sub = '', parent = scene } = {}) {
   return register(m, 'button', m, { onPress });
 }
 
-// ---------- room ----------
+// Drop targets you can point at while holding something (directors, boxes, trash, board).
+const targets = [];
+function addTarget(mesh, kind, ref) { mesh.userData.target = { kind, ref }; targets.push(mesh); return mesh; }
+
+// ================= room =================
 function buildRoom() {
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(14, 11), MAT.floor);
   floor.rotation.x = -PI / 2; floor.position.set(0, 0, -0.5); scene.add(floor);
+  // gold inlay circle around the meeting area
+  const inlay = new THREE.Mesh(new THREE.RingGeometry(2.96, 2.99, 96), decal(glowMat(GOLD, 0.9)));
+  inlay.rotation.x = -PI / 2; inlay.position.set(0, 0.002, -1.0); scene.add(inlay);
+
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(14, 11), MAT.ceiling);
   ceil.rotation.x = PI / 2; ceil.position.set(0, 3.4, -0.5); scene.add(ceil);
   const wallL = new THREE.Mesh(new THREE.PlaneGeometry(11, 3.4), MAT.wall);
   wallL.rotation.y = PI / 2; wallL.position.set(-7, 1.7, -0.5); scene.add(wallL);
   const wallR = new THREE.Mesh(new THREE.PlaneGeometry(11, 3.4), MAT.wall);
   wallR.rotation.y = -PI / 2; wallR.position.set(7, 1.7, -0.5); scene.add(wallR);
-  const wallF = new THREE.Mesh(new THREE.PlaneGeometry(14, 3.4), MAT.wall);
-  wallF.rotation.y = PI; wallF.position.set(0, 1.7, 5); scene.add(wallF);
+  const wallFar = new THREE.Mesh(new THREE.PlaneGeometry(14, 3.4), MAT.wall);
+  wallFar.position.set(0, 1.7, -6); scene.add(wallFar);
 
-  // floor-to-ceiling windows on the far wall
-  box(14, 0.32, 0.14, MAT.wall, 0, 0.16, -6);
-  box(14, 0.22, 0.14, MAT.wall, 0, 3.29, -6);
-  box(1.0, 3.4, 0.14, MAT.wall, -6.5, 1.7, -6);
-  box(1.0, 3.4, 0.14, MAT.wall, 6.5, 1.7, -6);
-  box(12.02, 0.015, 0.16, MAT.gold, 0, 0.325, -5.99);
-  box(12.02, 0.015, 0.16, MAT.gold, 0, 3.175, -5.99);
-  for (let x = -6; x <= 6; x += 2) box(0.06, 2.86, 0.1, MAT.bronze, x, 1.75, -6);
-  const glass = new THREE.Mesh(new THREE.PlaneGeometry(12, 2.86),
-    new THREE.MeshStandardMaterial({ color: 0x8899aa, transparent: true, opacity: 0.06, roughness: 0.05, metalness: 0.9 }));
-  glass.position.set(0, 1.75, -5.97); scene.add(glass);
+  // floor-to-ceiling windows behind your chair (z = +5)
+  box(14, 0.32, 0.14, MAT.wall, 0, 0.16, 5);
+  box(14, 0.22, 0.14, MAT.wall, 0, 3.29, 5);
+  box(1.0, 3.4, 0.14, MAT.wall, -6.5, 1.7, 5);
+  box(1.0, 3.4, 0.14, MAT.wall, 6.5, 1.7, 5);
+  box(12.02, 0.015, 0.17, MAT.gold, 0, 0.33, 5);
+  box(12.02, 0.015, 0.17, MAT.gold, 0, 3.17, 5);
+  for (let x = -6; x <= 6; x += 2) box(0.06, 2.86, 0.1, MAT.bronze, x, 1.75, 5);
 
-  // gold wall reveals (subtle vertical lines)
-  for (const z of [-4, -1, 2]) {
-    box(0.012, 3.0, 0.012, MAT.gold, -6.99, 1.6, z);
-    box(0.012, 3.0, 0.012, MAT.gold, 6.99, 1.6, z);
+  // gold reveals + glowing sci-fi lines in the cream walls
+  for (const z of [-4, -1, 2]) { box(0.012, 3.0, 0.012, MAT.gold, -6.985, 1.6, z); box(0.012, 3.0, 0.012, MAT.gold, 6.985, 1.6, z); }
+  const line = glowMat(0xf2c66a, 0.85);
+  for (const y of [1.05, 2.75]) {
+    box(0.01, 0.012, 10.6, line, -6.985, y, -0.5); box(0.01, 0.012, 10.6, line, 6.985, y, -0.5);
+    box(13.6, 0.012, 0.01, line, 0, y, -5.985);
   }
-  // skirting + crown in gold
-  box(0.02, 0.02, 11, MAT.gold, -6.99, 0.12, -0.5); box(0.02, 0.02, 11, MAT.gold, 6.99, 0.12, -0.5);
-  box(14, 0.02, 0.02, MAT.gold, 0, 0.12, 4.99);
+  box(0.02, 0.02, 11, MAT.gold, -6.98, 0.12, -0.5); box(0.02, 0.02, 11, MAT.gold, 6.98, 0.12, -0.5);
+  box(14, 0.02, 0.02, MAT.gold, 0, 0.12, -5.98);
 
   // ceiling cove light + downlights
   const cove = glowMat(0xffd28a, 0.9);
   box(13.6, 0.02, 0.05, cove, 0, 3.37, 4.75); box(13.6, 0.02, 0.05, cove, 0, 3.37, -5.75);
   box(0.05, 0.02, 10.4, cove, -6.75, 3.37, -0.5); box(0.05, 0.02, 10.4, cove, 6.75, 3.37, -0.5);
   const dl = glowMat(0xfff0d0, 1);
-  for (const [x, z] of [[-1, -1.3], [0, -1.3], [1, -1.3], [-5.5, -3.2], [-5.5, 1.6], [5.5, -3.2], [5.6, 1.8], [-1.5, 3.8], [1.5, 3.8]]) {
-    const d = new THREE.Mesh(new THREE.CircleGeometry(0.07, 20), dl);
-    d.rotation.x = PI / 2; d.position.set(x, 3.395, z); scene.add(d);
+  for (const [x, z] of [[-1, -1.3], [0, -1.3], [1, -1.3], [-5.5, -3.2], [-5.5, 1.6], [5.5, -3.2], [5.6, 1.8], [-1.5, -4.6], [1.5, -4.6]]) {
+    const d = new THREE.Mesh(new THREE.CircleGeometry(0.07, 20), dl); d.rotation.x = PI / 2; d.position.set(x, 3.395, z); scene.add(d);
   }
-
-  // rug under the desk with a gold border
-  const rug = new THREE.Mesh(new THREE.PlaneGeometry(5, 4.2), MAT.rug);
-  rug.rotation.x = -PI / 2; rug.position.set(0, 0.003, -1.3); scene.add(rug);
-  box(5, 0.004, 0.025, MAT.gold, 0, 0.005, -3.4); box(5, 0.004, 0.025, MAT.gold, 0, 0.005, 0.8);
-  box(0.025, 0.004, 4.2, MAT.gold, -2.5, 0.005, -1.3); box(0.025, 0.004, 4.2, MAT.gold, 2.5, 0.005, -1.3);
 }
 
-// ---------- living window ----------
+// ================= living window (behind you) =================
 let skyTex, sun;
+const ships = [];
 function skyState(hour) {
-  if (hour < 5 || hour >= 21) return { name: 'night', g: ['#02030a', '#0a1026', '#1d1b2e'], lit: 0.85, sun: 0x5566aa, si: 0.25, orb: '#e8e6d8', orbY: 0.22 };
+  if (hour < 5 || hour >= 21) return { name: 'night', g: ['#02030a', '#0a1026', '#1d1b2e'], lit: 0.85, sun: 0x5566aa, si: 0.3, orb: '#e8e6d8', orbY: 0.22 };
   if (hour < 8) return { name: 'dawn', g: ['#1c2a4c', '#b98572', '#f3c48d'], lit: 0.35, sun: 0xffc48a, si: 0.9, orb: '#ffd9a0', orbY: 0.62 };
-  if (hour < 17) return { name: 'day', g: ['#2c6bb2', '#7fb0de', '#dbe7ef'], lit: 0.05, sun: 0xfff2dd, si: 1.4, orb: '#fffbe8', orbY: 0.18 };
+  if (hour < 17) return { name: 'day', g: ['#2c6bb2', '#7fb0de', '#dbe7ef'], lit: 0.05, sun: 0xfff2dd, si: 1.3, orb: '#fffbe8', orbY: 0.18 };
   return { name: 'dusk', g: ['#1a1938', '#9c4e69', '#f2a35c'], lit: 0.6, sun: 0xffa86a, si: 0.8, orb: '#ffcf8a', orbY: 0.6 };
 }
 function drawSky(c, w, h) {
@@ -323,20 +304,17 @@ function drawSky(c, w, h) {
   const g = c.createLinearGradient(0, 0, 0, h);
   g.addColorStop(0, st.g[0]); g.addColorStop(0.62, st.g[1]); g.addColorStop(1, st.g[2]);
   c.fillStyle = g; c.fillRect(0, 0, w, h);
-  c.fillStyle = st.orb; c.globalAlpha = 0.9;
-  c.beginPath(); c.arc(w * 0.72, h * st.orbY, h * 0.05, 0, PI * 2); c.fill(); c.globalAlpha = 1;
-  if (st.name === 'night') { c.fillStyle = '#ffffff'; for (let i = 0; i < 160; i++) { c.globalAlpha = 0.3 + 0.5 * ((i * 37) % 10) / 10; c.fillRect((i * 997) % w, ((i * 613) % (h * 0.45)), 2, 2); } c.globalAlpha = 1; }
+  c.fillStyle = st.orb; c.globalAlpha = 0.9; c.beginPath(); c.arc(w * 0.3, h * st.orbY, h * 0.05, 0, PI * 2); c.fill(); c.globalAlpha = 1;
+  if (st.name === 'night') { c.fillStyle = '#ffffff'; for (let i = 0; i < 160; i++) { c.globalAlpha = 0.3 + 0.5 * ((i * 37) % 10) / 10; c.fillRect((i * 997) % w, (i * 613) % (h * 0.45), 2, 2); } c.globalAlpha = 1; }
   let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   for (const layer of [{ base: 0.62, col: st.name === 'day' ? '#56657a' : '#141826', maxH: 0.3 }, { base: 0.72, col: st.name === 'day' ? '#2f3846' : '#07080d', maxH: 0.42 }]) {
     let x = 0;
     while (x < w) {
-      const bw = w * (0.025 + rnd() * 0.05), bh = h * (0.08 + rnd() * layer.maxH);
-      const top = h * layer.base - bh + h * 0.28;
+      const bw = w * (0.025 + rnd() * 0.05), bh = h * (0.08 + rnd() * layer.maxH), top = h * layer.base - bh + h * 0.28;
       c.fillStyle = layer.col; c.fillRect(x, top, bw, h - top);
-      if (st.lit > 0.1) {
-        for (let wy = top + 10; wy < h - 12; wy += 16) for (let wx = x + 6; wx < x + bw - 6; wx += 12)
-          if (rnd() < st.lit * 0.5) { c.fillStyle = rnd() < 0.8 ? '#ffd58a' : '#cfe3ff'; c.fillRect(wx, wy, 5, 7); }
-      }
+      if (rnd() < 0.18) { c.fillStyle = layer.col; c.fillRect(x + bw * 0.45, top - h * 0.06, bw * 0.1, h * 0.06); c.fillStyle = '#ff6a4a'; c.fillRect(x + bw * 0.45, top - h * 0.065, bw * 0.1, 4); }
+      if (st.lit > 0.1) for (let wy = top + 10; wy < h - 12; wy += 16) for (let wx = x + 6; wx < x + bw - 6; wx += 12)
+        if (rnd() < st.lit * 0.5) { c.fillStyle = rnd() < 0.8 ? '#ffd58a' : '#cfe3ff'; c.fillRect(wx, wy, 5, 7); }
       x += bw + w * 0.004;
     }
   }
@@ -344,492 +322,186 @@ function drawSky(c, w, h) {
 function buildWindowView() {
   skyTex = canvasTex(2048, 720, drawSky);
   const sky = new THREE.Mesh(new THREE.PlaneGeometry(18, 6.3), new THREE.MeshBasicMaterial({ map: skyTex, toneMapped: false }));
-  sky.position.set(0, 2.0, -7.2); scene.add(sky);
+  sky.rotation.y = PI; sky.position.set(0, 2.0, 6.4); scene.add(sky);
   sun = new THREE.DirectionalLight(0xffffff, 1);
-  sun.position.set(2, 4, -8); sun.target.position.set(0, 0, -1); scene.add(sun, sun.target);
-  updateSky();
-  setInterval(updateSky, 5 * 60 * 1000);
+  sun.position.set(-2, 4, 8); sun.target.position.set(0, 0, -1); scene.add(sun, sun.target);
+  // the odd ship drifting past the skyline
+  for (let i = 0; i < 3; i++) {
+    const s = new THREE.Group();
+    const hull = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.34, 6), new THREE.MeshBasicMaterial({ color: 0x1b1d24, toneMapped: false }));
+    hull.rotation.z = PI / 2; s.add(hull);
+    const engine = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), glowMat(i === 1 ? 0x9fd8ff : 0xffb36a, 1));
+    engine.position.x = 0.18; s.add(engine);
+    s.position.set(-9 + i * 6, 2.3 + i * 0.45, 6.1); s.userData = { speed: 0.25 + i * 0.12, dir: i % 2 ? 1 : -1 };
+    if (s.userData.dir > 0) s.rotation.y = PI;
+    scene.add(s); ships.push(s);
+  }
+  updateSky(); setInterval(updateSky, 5 * 60 * 1000);
 }
-function updateSky() {
-  repaint(skyTex, drawSky);
-  const st = skyState(new Date().getHours());
-  sun.color.setHex(st.sun); sun.intensity = st.si;
-}
+function updateSky() { repaint(skyTex, drawSky); const st = skyState(new Date().getHours()); sun.color.setHex(st.sun); sun.intensity = st.si; }
 
-// ---------- lights ----------
-const lights = [];
+// ================= lights =================
 function buildLights() {
-  const hemi = new THREE.HemisphereLight(0xfff6e8, 0x8a7f6c, 1.0);
-  scene.add(hemi); lights.push([hemi, 1.0]);
-  for (const [x, y, z, i] of [[0, 2.9, -1.3, 18], [-5.4, 2.8, -0.8, 16], [5.4, 2.8, -0.8, 16], [0, 2.8, 3.6, 14]]) {
-    const p = new THREE.PointLight(0xffd9a6, i, 0, 2);
-    p.position.set(x, y, z); scene.add(p); lights.push([p, i]);
+  scene.add(new THREE.HemisphereLight(0xfff6e8, 0x6d6457, 1.0));
+  for (const [x, y, z, i] of [[0, 2.9, -1.3, 18], [-5.4, 2.8, -0.8, 16], [5.4, 2.8, -0.8, 16], [0, 2.8, -4.4, 14]]) {
+    const p = new THREE.PointLight(0xffd9a6, i, 0, 2); p.position.set(x, y, z); scene.add(p);
   }
 }
 
-// ---------- desk / boardroom table ----------
-function buildDesk() {
-  const w = TABLE.x1 - TABLE.x0, d = TABLE.z1 - TABLE.z0, cz = (TABLE.z0 + TABLE.z1) / 2;
-  box(w, 0.04, d, MAT.glass, 0, TABLE.y - 0.02, cz);
-  box(w + 0.012, 0.012, 0.012, MAT.gold, 0, TABLE.y - 0.006, TABLE.z1);
-  box(w + 0.012, 0.012, 0.012, MAT.gold, 0, TABLE.y - 0.006, TABLE.z0);
-  box(0.012, 0.012, d, MAT.gold, TABLE.x0, TABLE.y - 0.006, cz);
-  box(0.012, 0.012, d, MAT.gold, TABLE.x1, TABLE.y - 0.006, cz);
-  for (const x of [-1.0, 1.0]) {
-    box(0.09, TABLE.y - 0.04, 1.1, MAT.leather, x, (TABLE.y - 0.04) / 2, cz);
-    box(0.092, 0.01, 1.102, MAT.gold, x, TABLE.y - 0.045, cz);
-    box(0.092, 0.01, 1.102, MAT.gold, x, 0.005, cz);
-  }
-  // owner's chair (behind you at the desk)
-  const ch = new THREE.Group(); ch.position.set(0, 0, 0.28); scene.add(ch);
-  box(0.56, 0.08, 0.52, MAT.leather, 0, 0.46, 0, ch);
-  box(0.58, 0.85, 0.09, MAT.leather, 0, 0.92, 0.28, ch);
-  box(0.58, 0.015, 0.095, MAT.gold, 0, 1.35, 0.28, ch);
+// ================= curved desks =================
+function arcSlab(r0, r1, half, y, thick, mat) {
+  const s = PI / 2 - half, e = PI / 2 + half, sh = new THREE.Shape();
+  sh.moveTo(r0 * Math.cos(s), r0 * Math.sin(s));
+  sh.absarc(0, 0, r1, s, e, false);
+  sh.absarc(0, 0, r0, e, s, true);
+  sh.closePath();
+  const m = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: thick, bevelEnabled: false, curveSegments: 48 }), mat);
+  m.rotation.x = -PI / 2; m.position.y = y - thick; scene.add(m); return m;
 }
+function arcTrim(r, half, y) {
+  const t = new THREE.Mesh(new THREE.TorusGeometry(r, 0.0075, 8, 96, half * 2), MAT.gold);
+  t.rotation.set(-PI / 2, 0, PI / 2 - half); t.position.y = y; scene.add(t); return t;
+}
+function buildDesk(T, withChair) {
+  arcSlab(T.r0, T.r1, T.half, T.y, 0.04, MAT.glass);
+  // gold trim hugs the edges (offset so it never overlaps the glass = no flicker)
+  arcTrim(T.r1 + 0.008, T.half, T.y - 0.02); arcTrim(T.r0 - 0.008, T.half, T.y - 0.02);
+  for (const sgn of [-1, 1]) {
+    const a = sgn * T.half, mid = (T.r0 + T.r1) / 2, [x, z] = polar(mid, a);
+    const cap = box(0.015, 0.015, T.r1 - T.r0 + 0.03, MAT.gold, x, T.y - 0.02, z);
+    cap.rotation.y = -a; cap.position.x += sgn * 0.009 * Math.cos(a); cap.position.z += sgn * 0.009 * Math.sin(a);
+  }
+  // curved leather modesty panel + gold posts
+  const panel = new THREE.Mesh(new THREE.CylinderGeometry(T.r1 - 0.12, T.r1 - 0.12, T.y - 0.08, 48, 1, true, PI - T.half * 0.9, T.half * 1.8),
+    std(0x141416, 0.55, 0.05, 0.3, { side: THREE.DoubleSide }));
+  panel.position.y = (T.y - 0.08) / 2 + 0.02; scene.add(panel);
+  for (const a of [-T.half * 0.85, 0, T.half * 0.85]) {
+    const [x, z] = polar(T.r0 + 0.06, a);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, T.y - 0.05, 12), MAT.gold);
+    post.position.set(x, (T.y - 0.05) / 2, z); scene.add(post);
+  }
+  if (withChair) {
+    const ch = new THREE.Group(); ch.position.set(0, 0, 0.3); scene.add(ch);
+    box(0.56, 0.08, 0.52, MAT.leather, 0, 0.46, 0, ch);
+    box(0.58, 0.85, 0.09, MAT.leather, 0, 0.92, 0.28, ch);
+    box(0.585, 0.015, 0.095, MAT.gold, 0, 1.355, 0.28, ch);
+  }
+}
+const overArc = (T, p, extra = 0.6) => {
+  const r = Math.hypot(p.x, p.z), a = Math.atan2(p.x, -p.z);
+  return r > T.r0 - 0.02 && r < T.r1 + 0.02 && Math.abs(a) < T.half && p.y < T.y + extra;
+};
 
-// ---------- trays: Completed (right) / Revised (left) ----------
+// ================= trays + trash =================
 const trays = [];
-function makeTray(kind, x, z) {
-  const g = new THREE.Group(); g.position.set(x, TABLE.y, z); scene.add(g);
+function makeTray(kind, ang) {
+  const [x, z] = polar(0.8, ang);
+  const g = new THREE.Group(); g.position.set(x, DESK.y, z); g.rotation.y = faceCenter(x, z); scene.add(g);
   const W = 0.34, D = 0.27, H = 0.075, T = 0.008;
   box(W, T, D, MAT.leather, 0, T / 2, 0, g);
   box(W, H, T, MAT.leather, 0, H / 2, -D / 2, g); box(W, H, T, MAT.leather, 0, H / 2, D / 2, g);
   box(T, H, D, MAT.leather, -W / 2, H / 2, 0, g); box(T, H, D, MAT.leather, W / 2, H / 2, 0, g);
-  box(W + 0.01, 0.006, 0.014, MAT.gold, 0, H, -D / 2, g); box(W + 0.01, 0.006, 0.014, MAT.gold, 0, H, D / 2, g);
-  box(0.014, 0.006, D, MAT.gold, -W / 2, H, 0, g); box(0.014, 0.006, D, MAT.gold, W / 2, H, 0, g);
+  box(W + 0.012, 0.006, 0.014, MAT.gold, 0, H + 0.003, -D / 2, g); box(W + 0.012, 0.006, 0.014, MAT.gold, 0, H + 0.003, D / 2, g);
+  box(0.014, 0.006, D - 0.016, MAT.gold, -W / 2, H + 0.003, 0, g); box(0.014, 0.006, D - 0.016, MAT.gold, W / 2, H + 0.003, 0, g);
   const approve = kind === 'approve';
-  const glow = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.02, D - 0.02), glowMat(approve ? GOLD_HI : COPPER, 0.0));
-  glow.rotation.x = -PI / 2; glow.position.y = T + 0.002; g.add(glow);
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.02, D - 0.02), decal(glowMat(approve ? GOLD_HI : COPPER, 0)));
+  glow.rotation.x = -PI / 2; glow.position.y = T + 0.004; g.add(glow);
   const sign = labelPlane(0.36, 0.09, (c, w, h) => {
     panelBg(c, w, h, { radius: 0.2, stroke: approve ? '#c9a24a' : '#c7744a' });
-    c.textAlign = 'center';
-    c.fillStyle = approve ? '#e6c878' : '#efa27a';
-    c.font = `600 ${h * 0.4}px ${SERIF}`;
+    c.textAlign = 'center'; c.fillStyle = approve ? '#e6c878' : '#efa27a'; c.font = `600 ${h * 0.4}px ${SERIF}`;
     c.fillText(approve ? 'COMPLETED' : 'REVISED', w / 2, h * 0.5);
     c.font = `500 ${h * 0.2}px ${SANS}`; c.fillStyle = '#c9bea4';
     c.fillText(approve ? 'Drop here = approve' : 'Drop here = send back with a note', w / 2, h * 0.8);
   }, { px: 2400 });
-  sign.position.set(0, 0.2, 0); sign.rotation.x = -0.2; g.add(sign);
-  const t = { kind, g, x, z, glow, flash: 0, count: 0,
-    contains: (p) => Math.abs(p.x - x) < 0.25 && Math.abs(p.z - z) < 0.22 && p.y < TABLE.y + 0.55 && p.y > TABLE.y - 0.1 };
-  trays.push(t);
-  return t;
+  sign.position.set(0, 0.2, -0.05); sign.rotation.x = -0.25; g.add(sign);
+  const zone = addTarget(new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.3, 0.34), ghostMat), 'tray', null);
+  zone.position.y = 0.12; g.add(zone);
+  const t = { kind, g, glow, zone, flash: 0, count: 0,
+    contains(p) { const l = g.worldToLocal(p.clone()); return Math.abs(l.x) < 0.22 && Math.abs(l.z) < 0.19 && l.y < 0.5 && l.y > -0.08; },
+    spot() { return g.localToWorld(new THREE.Vector3((Math.random() - 0.5) * 0.04, 0.014 + this.count * 0.003, (Math.random() - 0.5) * 0.03)); } };
+  zone.userData.target.ref = t;
+  trays.push(t); return t;
+}
+const trash = { x: 1.3, z: -0.25, top: 0.5, r: 0.19, swish: 0, items: [], flash: 0 };
+let trashLabel;
+function buildTrash() {
+  const g = new THREE.Group(); g.position.set(trash.x, 0, trash.z); scene.add(g);
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.16, 0.5, 40, 1, true), std(0x0d0d0f, 0.25, 0.4, 0.9, { side: THREE.DoubleSide }));
+  body.position.y = 0.25; g.add(body);
+  const bottom = new THREE.Mesh(new THREE.CircleGeometry(0.16, 32), MAT.leather); bottom.rotation.x = -PI / 2; bottom.position.y = 0.01; g.add(bottom);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.011, 8, 48), MAT.gold); rim.rotation.x = PI / 2; rim.position.y = 0.5; g.add(rim);
+  trash.glow = new THREE.Mesh(new THREE.TorusGeometry(0.205, 0.02, 8, 48), glowMat(GOLD_HI, 0)); trash.glow.rotation.x = PI / 2; trash.glow.position.y = 0.5; g.add(trash.glow);
+  trashLabel = labelPlane(0.36, 0.12, drawTrashLabel, { px: 2000 });
+  trashLabel.position.set(0, 0.78, 0); trashLabel.rotation.y = faceCenter(trash.x, trash.z); g.add(trashLabel);
+  const restore = makeButton(0.2, 0.06, 'Restore last', () => restoreTrash(), { parent: g });
+  restore.position.set(0, 0.64, 0); restore.rotation.y = faceCenter(trash.x, trash.z);
+  const zone = addTarget(new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.6, 16), ghostMat), 'trash', trash);
+  zone.position.y = 0.3; g.add(zone);
+}
+function drawTrashLabel(c, w, h) {
+  panelBg(c, w, h, { radius: 0.25 });
+  c.textAlign = 'center'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.36}px ${SERIF}`; c.fillText('TRASH', w / 2, h * 0.45);
+  c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.22}px ${SANS}`;
+  c.fillText(`${trash.swish} swish${trash.swish === 1 ? '' : 'es'} · crumple & shoot`, w / 2, h * 0.78);
 }
 
-// ---------- documents ----------
+// ================= documents + notes =================
 const docs = [];
 function drawDoc(doc) {
   return (c, w, h) => {
     c.fillStyle = '#f5f0e6'; c.fillRect(0, 0, w, h);
     c.fillStyle = '#0d0d0f'; c.fillRect(0, 0, w, h * 0.15);
     c.fillStyle = '#c9a24a'; c.fillRect(0, h * 0.15, w, h * 0.008);
-    c.fillStyle = '#e6c878'; c.font = `700 ${h * 0.045}px ${SANS}`; c.textAlign = 'left';
-    c.fillText(doc.type, w * 0.07, h * 0.095);
-    c.fillStyle = '#a59f92'; c.font = `500 ${h * 0.032}px ${SANS}`; c.textAlign = 'right';
-    c.fillText('WORKING BONES HQ', w * 0.93, h * 0.095);
+    c.fillStyle = '#e6c878'; c.font = `700 ${h * 0.045}px ${SANS}`; c.textAlign = 'left'; c.fillText(doc.type, w * 0.07, h * 0.095);
+    c.fillStyle = '#a59f92'; c.font = `500 ${h * 0.032}px ${SANS}`; c.textAlign = 'right'; c.fillText('WORKING BONES HQ', w * 0.93, h * 0.095);
     c.textAlign = 'left'; c.fillStyle = '#16120a'; c.font = `600 ${h * 0.068}px ${SERIF}`;
-    let y = wrap(c, doc.title, w * 0.07, h * 0.26, w * 0.86, h * 0.078, 3);
-    c.fillStyle = '#6b6457'; c.font = `500 ${h * 0.036}px ${SANS}`;
-    c.fillText(`From ${doc.from}  →  for ${doc.to}`, w * 0.07, y + h * 0.01);
-    c.fillStyle = '#d9d2c3';
-    for (let i = 0; i < 7; i++) c.fillRect(w * 0.07, y + h * (0.07 + i * 0.05), w * (i % 3 === 2 ? 0.55 : 0.86), h * 0.014);
-    c.fillStyle = '#8a8172'; c.font = `600 ${h * 0.028}px ${SANS}`;
-    c.fillText('PREVIEW COPY · NOT LINKED YET', w * 0.07, h * 0.95);
+    const y = wrap(c, doc.title, w * 0.07, h * 0.26, w * 0.86, h * 0.078, 3);
+    c.fillStyle = '#6b6457'; c.font = `500 ${h * 0.036}px ${SANS}`; c.fillText(`From ${doc.from}  →  for ${doc.to}`, w * 0.07, y + h * 0.01);
+    c.fillStyle = '#d9d2c3'; for (let i = 0; i < 7; i++) c.fillRect(w * 0.07, y + h * (0.07 + i * 0.05), w * (i % 3 === 2 ? 0.55 : 0.86), h * 0.014);
+    c.fillStyle = '#8a8172'; c.font = `600 ${h * 0.028}px ${SANS}`; c.fillText('PREVIEW COPY · NOT LINKED YET', w * 0.07, h * 0.95);
     if (doc.state) {
-      const approve = doc.state === 'approve';
-      const label = approve ? 'APPROVED' : doc.state === 'revise' ? 'REVISE' : `WITH ${doc.state.slice(7).toUpperCase()}`;
+      const approve = doc.state === 'approve', revise = doc.state === 'revise';
+      const label = approve ? 'APPROVED' : revise ? 'REVISE' : `WITH ${doc.state.slice(7).toUpperCase()}`;
       c.save(); c.translate(w * 0.5, h * 0.62); c.rotate(-0.22);
-      c.strokeStyle = approve ? '#b8902e' : doc.state === 'revise' ? '#b3261e' : '#2f4f7a';
-      c.fillStyle = c.strokeStyle; c.lineWidth = h * 0.012;
-      c.font = `800 ${h * 0.085}px ${SANS}`; c.textAlign = 'center';
-      const tw = c.measureText(label).width + w * 0.1;
-      rr(c, -tw / 2, -h * 0.07, tw, h * 0.12, h * 0.02); c.stroke();
+      c.strokeStyle = c.fillStyle = approve ? '#b8902e' : revise ? '#b3261e' : '#2f4f7a';
+      c.lineWidth = h * 0.012; c.font = `800 ${h * 0.085}px ${SANS}`; c.textAlign = 'center';
+      const tw = c.measureText(label).width + w * 0.1; rr(c, -tw / 2, -h * 0.07, tw, h * 0.12, h * 0.02); c.stroke();
       c.fillText(label, 0, h * 0.025); c.restore();
     }
   };
 }
+// Shared parts every grabbable sheet gets: glow frame, corner handles for resizing, a crumpled-ball form.
+function equipSheet(g, w, h, ballMat) {
+  const frame = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.016, h + 0.016), glowMat(GOLD_HI, 1));
+  frame.position.z = -0.002; frame.visible = false; g.add(frame);
+  const handles = new THREE.Group(); handles.visible = false; g.add(handles);
+  for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    const hd = new THREE.Mesh(new THREE.SphereGeometry(0.014, 12, 8), glowMat(GOLD_HI, 1));
+    hd.position.set(sx * (w / 2 + 0.01), sy * (h / 2 + 0.01), 0.006); handles.add(hd);
+    register(hd, 'handle', g);
+  }
+  const geo = new THREE.IcosahedronGeometry(0.05, 2), pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) { const f = 0.78 + Math.random() * 0.4; pos.setXYZ(i, pos.getX(i) * f, pos.getY(i) * f, pos.getZ(i) * f); }
+  geo.computeVertexNormals();
+  const ball = new THREE.Mesh(geo, ballMat); ball.visible = false; g.add(ball);
+  register(ball, g.userData.kind, g);
+  Object.assign(g.userData, { frame, handles, ball, heldBy: null, crumpled: false, fly: null, glide: null });
+}
 function makeDoc(spec, i) {
   const doc = { ...spec, state: null };
-  const g = new THREE.Group();
+  const g = new THREE.Group(); g.userData = { kind: 'doc', doc };
   const paper = labelPlane(0.2, 0.26, drawDoc(doc), { px: 2600, transparent: false, side: THREE.DoubleSide });
-  const frame = new THREE.Mesh(new THREE.PlaneGeometry(0.216, 0.276), glowMat(GOLD_HI, 1));
-  frame.position.z = -0.0015; frame.visible = false;
-  g.add(frame, paper);
-  g.userData = { kind: 'doc', doc, paper, frame, heldBy: null };
-  g.position.set(-0.48 + i * 0.24, TABLE.y + 0.003 + i * 0.0004, -0.9);
-  g.rotation.set(-PI / 2, 0, (i - 2) * 0.05);
+  decal(paper.material); g.add(paper); g.userData.paper = paper;
+  equipSheet(g, 0.2, 0.26, MAT.paperBall);
+  const a = -0.46 + i * 0.23, [x, z] = polar(0.74, a);
+  g.position.set(x, DESK.y + 0.004 + i * 0.0006, z);
+  g.rotation.set(-PI / 2, 0, -a * 0.9 + (Math.random() - 0.5) * 0.06);
   g.userData.home = { p: g.position.clone(), q: g.quaternion.clone() };
-  scene.add(g);
-  register(paper, 'doc', g);
-  docs.push(g);
-  return g;
+  scene.add(g); register(paper, 'doc', g); docs.push(g); return g;
 }
-function setDocState(g, state) {
-  g.userData.doc.state = state;
-  repaint(g.userData.paper.userData.tex, drawDoc(g.userData.doc));
-}
+function setDocState(g, state) { g.userData.doc.state = state; repaint(g.userData.paper.userData.tex, drawDoc(g.userData.doc)); }
 
-// ---------- directors ----------
-const directors = [];
-function makeDirector(d) {
-  const g = new THREE.Group(); g.position.set(d.x, 0, DIRECTOR_Z); scene.add(g);
-  const chair = new THREE.Group(); g.add(chair);
-  box(0.52, 0.08, 0.5, MAT.leather, 0, 0.44, 0, chair);
-  box(0.54, 0.82, 0.08, MAT.leather, 0, 0.9, -0.27, chair);
-  box(0.545, 0.015, 0.085, MAT.gold, 0, 1.315, -0.27, chair);
-  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.38, 12), MAT.gold); post.position.y = 0.21; chair.add(post);
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.28, 0.03, 24), MAT.leather); base.position.y = 0.015; chair.add(base);
-
-  const hips = new THREE.Group(); hips.position.set(0, 0.5, 0.02); g.add(hips);
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.155, 0.3, 6, 16), MAT.body);
-  torso.position.y = 0.31; torso.scale.set(1.12, 1, 0.78); hips.add(torso);
-  box(0.012, 0.26, 0.01, MAT.gold, 0, 0.42, 0.122, hips);
-  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.062, 0.011, 8, 24), MAT.gold);
-  collar.rotation.x = PI / 2; collar.position.y = 0.64; hips.add(collar);
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.1, 12), MAT.body); neck.position.y = 0.68; hips.add(neck);
-  const head = new THREE.Group(); head.position.y = 0.8; hips.add(head);
-  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.112, 24, 18), MAT.body); skull.scale.set(0.92, 1.08, 0.98); head.add(skull);
-  const visorMat = glowMat(d.accent, 0.35); visorMat.side = THREE.DoubleSide; visorMat.depthWrite = false;
-  const visor = new THREE.Mesh(new THREE.CylinderGeometry(0.118, 0.118, 0.032, 28, 1, true, -0.95, 1.9), visorMat);
-  visor.position.y = 0.012; visor.scale.set(0.93, 1, 1); head.add(visor);
-
-  const arms = [];
-  for (const side of [-1, 1]) {
-    const sh = new THREE.Group(); sh.position.set(side * 0.2, 0.52, 0); hips.add(sh);
-    const ua = new THREE.Mesh(new THREE.CapsuleGeometry(0.048, 0.2, 4, 10), MAT.body); ua.position.y = -0.14; sh.add(ua);
-    const el = new THREE.Group(); el.position.y = -0.29; sh.add(el);
-    const fa = new THREE.Mesh(new THREE.CapsuleGeometry(0.043, 0.18, 4, 10), MAT.body); fa.position.y = -0.13; el.add(fa);
-    const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.047, 0.007, 6, 18), MAT.gold); cuff.rotation.x = PI / 2; cuff.position.y = -0.22; el.add(cuff);
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.045, 14, 10), MAT.body); hand.position.y = -0.27; hand.scale.set(0.9, 1.1, 0.6); el.add(hand);
-    sh.rotation.set(-0.7, 0, side * 0.08); el.rotation.x = -0.85;
-    arms.push({ side, sh, el });
-  }
-  for (const side of [-1, 1]) {
-    const th = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.3, 4, 10), MAT.body);
-    th.rotation.x = PI / 2; th.position.set(side * 0.095, 0.0, 0.2); hips.add(th);
-    const sn = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.34, 4, 10), MAT.body);
-    sn.position.set(side * 0.095, -0.25, 0.4); hips.add(sn);
-  }
-
-  // engraved placard on the table, facing you
-  const plac = new THREE.Group(); plac.position.set(d.x, TABLE.y, -1.9); scene.add(plac);
-  box(0.36, 0.075, 0.05, MAT.leather, 0, 0.0375, 0, plac);
-  box(0.362, 0.006, 0.052, MAT.gold, 0, 0.003, 0, plac);
-  const face = labelPlane(0.344, 0.064, (c, w, h) => {
-    c.fillStyle = '#0d0d0f'; c.fillRect(0, 0, w, h);
-    c.strokeStyle = '#c9a24a'; c.lineWidth = h * 0.035; c.strokeRect(h * 0.06, h * 0.06, w - h * 0.12, h - h * 0.12);
-    c.textAlign = 'center'; c.fillStyle = '#e6c878';
-    c.font = `600 ${h * 0.46}px ${SERIF}`; c.fillText(d.name, w / 2, h * 0.53);
-    c.font = `600 ${h * 0.15}px ${SANS}`; c.fillStyle = '#c2b693';
-    c.fillText(d.title.toUpperCase().split('').join(' '), w / 2, h * 0.82);
-  }, { px: 2800, transparent: false });
-  face.position.set(0, 0.0375, 0.0256); plac.add(face);
-
-  const D = { d, g, hips, head, visorMat, arms, nod: 0 };
-  directors.push(D);
-  return D;
-}
-let speaker = null;
-const marker = new THREE.Group();
-{
-  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.045, 0), glowMat(GOLD_HI, 1));
-  gem.scale.set(1, 1.5, 1); marker.add(gem);
-  const halo = new THREE.Mesh(new THREE.RingGeometry(0.06, 0.07, 32), glowMat(GOLD_HI, 0.5));
-  halo.rotation.x = -PI / 2; halo.position.y = -0.09; marker.add(halo);
-  marker.visible = false; scene.add(marker);
-}
-function setSpeaker(name) {
-  speaker = name || null;
-  document.querySelectorAll('#speakRow button').forEach((b) => b.classList.toggle('on', (b.dataset.sp || null) === speaker));
-  consoleButtons.forEach((b) => b.userData.setOn((b.userData.sp || null) === speaker));
-}
-const lerp = (a, b, k) => a + (b - a) * k;
-function animateDirectors(t, dt) {
-  const cam = camera.getWorldPosition(V());
-  const k = Math.min(1, dt * 5);
-  const S = directors.find((x) => x.d.name === speaker);
-  for (const D of directors) {
-    const talking = D === S;
-    const hx = D.g.position.x, hz = D.g.position.z;
-    let lx = cam.x, lz = cam.z;
-    if (S && !talking) { lx = S.g.position.x; lz = S.g.position.z + 0.3; }
-    const yaw = THREE.MathUtils.clamp(Math.atan2(lx - hx, lz - hz), -1.0, 1.0);
-    D.head.rotation.y = lerp(D.head.rotation.y, yaw * 0.75, k);
-    D.hips.rotation.y = lerp(D.hips.rotation.y, yaw * 0.22, k);
-    const ph = D.d.phase;
-    D.nod = Math.max(0, D.nod - dt);
-    const nod = D.nod > 0 ? 0.18 * Math.sin((1 - D.nod) * PI * 3) : 0;
-    if (talking) {
-      D.head.rotation.x = lerp(D.head.rotation.x, 0.05 * Math.sin(t * 4.7 + ph) + nod, k);
-      for (const a of D.arms) {
-        const o = a.side > 0 ? 0 : 1.9;
-        a.sh.rotation.x = lerp(a.sh.rotation.x, -0.95 + 0.28 * Math.sin(t * 2.4 + o + ph), k);
-        a.sh.rotation.z = lerp(a.sh.rotation.z, a.side * (0.2 + 0.14 * Math.sin(t * 1.7 + o)), k);
-        a.el.rotation.x = lerp(a.el.rotation.x, -0.9 + 0.4 * Math.sin(t * 3.1 + o * 1.3), k);
-      }
-      D.visorMat.opacity = 0.5 + 0.5 * Math.abs(Math.sin(t * 11 + Math.sin(t * 3) * 2));
-    } else {
-      D.head.rotation.x = lerp(D.head.rotation.x, 0.02 * Math.sin(t * 0.8 + ph) + nod, k);
-      for (const a of D.arms) {
-        a.sh.rotation.x = lerp(a.sh.rotation.x, -0.7, k * 0.6);
-        a.sh.rotation.z = lerp(a.sh.rotation.z, a.side * 0.08, k * 0.6);
-        a.el.rotation.x = lerp(a.el.rotation.x, -0.85, k * 0.6);
-      }
-      D.visorMat.opacity = lerp(D.visorMat.opacity, 0.3, k);
-    }
-  }
-  if (S) {
-    const target = S.head.getWorldPosition(V()).add(new THREE.Vector3(0, 0.3 + 0.025 * Math.sin(t * 2.5), 0));
-    if (!marker.visible) { marker.position.copy(target); marker.visible = true; }
-    marker.position.lerp(target, Math.min(1, dt * 6));
-    marker.rotation.y += dt * 1.6;
-  } else marker.visible = false;
-}
-
-// ---------- desk console + welcome card ----------
-const consoleButtons = [];
-function buildConsole() {
-  const g = new THREE.Group(); g.position.set(0.55, TABLE.y + 0.05, -1.5); g.rotation.x = -0.9; scene.add(g);
-  const title = labelPlane(0.46, 0.04, (c, w, h) => {
-    c.textAlign = 'center'; c.fillStyle = '#c9bea4'; c.font = `600 ${h * 0.55}px ${SANS}`;
-    c.fillText("DEMO · WHO'S SPEAKING", w / 2, h * 0.7);
-  }, { px: 2400 });
-  title.position.y = 0.065; g.add(title);
-  [['Ava', 'Ava'], ['Claude', 'Claude'], ['Bob', 'Bob'], ['Quiet', null]].forEach(([label, sp], i) => {
-    const b = makeButton(0.105, 0.06, label, () => setSpeaker(sp), { parent: g });
-    b.position.set(-0.18 + i * 0.12, 0, 0); b.userData.sp = sp;
-    consoleButtons.push(b);
-  });
-}
-function greeting() { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; }
-function buildWelcome() {
-  const card = labelPlane(0.46, 0.32, (c, w, h) => {
-    panelBg(c, w, h, { radius: 0.05 });
-    c.textAlign = 'left'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.085}px ${SERIF}`;
-    c.fillText(`${greeting()}, Michael`, w * 0.07, h * 0.16);
-    c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.045}px ${SANS}`;
-    c.fillText('Executive Office · Stage 1 preview', w * 0.07, h * 0.25);
-    c.fillStyle = '#f0e6cc'; c.font = `500 ${h * 0.05}px ${SANS}`;
-    let y = h * 0.38;
-    for (const line of ['Grab a document. Drop it in COMPLETED (right) to approve, or REVISED (left) to send it back.',
-      'Toss a document to a director to hand it over.',
-      'Point at a gold floor ring and pull the trigger to move to a station.']) {
-      c.fillStyle = '#c9a24a'; c.fillText('•', w * 0.07, y); c.fillStyle = '#f0e6cc';
-      y = wrap(c, line, w * 0.11, y, w * 0.82, h * 0.066, 3) + h * 0.015;
-    }
-    c.fillStyle = '#e09a6a'; c.font = `600 ${h * 0.042}px ${SANS}`;
-    wrap(c, 'DEMO: nothing here saves yet. Live HQ data arrives with phone pairing in Stage 2.', w * 0.07, h * 0.9, w * 0.86, h * 0.05, 2);
-  }, { px: 2600 });
-  card.position.set(-0.55, TABLE.y + 0.15, -1.5); card.rotation.x = -0.35; scene.add(card);
-}
-
-// ---------- toast + undo (HTML + in-headset) ----------
-let lastAction = null, toastTimer = 0;
-const toast3d = new THREE.Group(); toast3d.position.set(0, 1.32, -0.95); toast3d.visible = false; scene.add(toast3d);
-let toastMsg = { t: '', s: '' };
-const toastPanel = labelPlane(0.62, 0.11, (c, w, h) => drawToast(c, w, h), { px: 2000 });
-function drawToast(c, w, h) {
-  panelBg(c, w, h, { radius: 0.2 });
-  c.textAlign = 'left'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.3}px ${SERIF}`;
-  c.fillText(toastMsg.t, w * 0.04, h * 0.45);
-  c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.18}px ${SANS}`; c.fillText(toastMsg.s, w * 0.04, h * 0.78);
-}
-toast3d.add(toastPanel);
-const undo3d = makeButton(0.13, 0.075, 'Undo', () => undoLast(), { parent: toast3d });
-undo3d.position.set(0.39, 0, 0);
-function showToast(t, s) {
-  toastMsg = { t, s };
-  repaint(toastPanel.userData.tex, drawToast);
-  $('#toastT').textContent = t; $('#toastS').textContent = s;
-  $('#toast').classList.add('show');
-  toast3d.visible = true; toastTimer = 7;
-}
-function hideToast() { $('#toast').classList.remove('show'); toast3d.visible = false; toastTimer = 0; }
-$('#undoBtn').addEventListener('click', () => undoLast());
-
-// ---------- placing / dropping ----------
-function setWorldPos(obj, p) { obj.position.copy(obj.parent ? obj.parent.worldToLocal(p.clone()) : p); }
-function overTable(p) { return p.x > TABLE.x0 && p.x < TABLE.x1 && p.z > TABLE.z0 && p.z < TABLE.z1 && p.y < TABLE.y + 0.6; }
-function layFlat(obj, x, z, extraY = 0) {
-  scene.attach(obj);
-  obj.position.set(x, TABLE.y + 0.004 + extraY, z);
-  obj.rotation.set(-PI / 2, 0, (Math.random() - 0.5) * 0.12);
-}
-function remember(obj, kind, info) { lastAction = { obj, kind, info }; }
-function place(obj) {
-  const p = obj.getWorldPosition(V());
-  const ud = obj.userData;
-  if (ud.kind === 'doc') {
-    const prev = ud.doc.state;
-    if (prev) { const t = trays.find((x) => x.kind === prev); if (t) t.count = Math.max(0, t.count - 1); setDocState(obj, null); }
-    for (const t of trays) if (t.contains(p)) {
-      layFlat(obj, t.x + (Math.random() - 0.5) * 0.03, t.z + (Math.random() - 0.5) * 0.02, 0.012 + t.count * 0.003);
-      t.count++; t.flash = 1.2; setDocState(obj, t.kind); remember(obj, t.kind);
-      if (t.kind === 'approve') showToast(`Approved: ${ud.doc.title}`, 'Preview only — not saved. Undo within a few seconds.');
-      else showToast(`Sent back: ${ud.doc.title}`, 'Stage 2: your next spoken sentence becomes the revision note.');
-      return;
-    }
-    for (const D of directors) {
-      if (Math.abs(p.x - D.d.x) < 0.38 && p.z < TABLE.z0 + 0.12 && p.z > DIRECTOR_Z - 0.5 && p.y > 0.5 && p.y < 1.7) {
-        layFlat(obj, D.d.x + (Math.random() - 0.5) * 0.05, -1.72, 0.002);
-        setDocState(obj, `handed:${D.d.name}`); D.nod = 1; remember(obj, 'hand');
-        showToast(`Handed to ${D.d.name}: ${ud.doc.title}`, 'Preview only — not sent yet.');
-        return;
-      }
-    }
-    if (overTable(p)) { layFlat(obj, p.x, p.z); return; }
-    scene.attach(obj); obj.lookAt(camera.getWorldPosition(V()));
-    return;
-  }
-  if (ud.kind === 'note') {
-    const lp = board.worldToLocal(p.clone());
-    if (Math.abs(lp.z) < 0.45 && Math.abs(lp.x) < 1.62 && Math.abs(lp.y) < 0.98) {
-      board.attach(obj);
-      obj.position.set(THREE.MathUtils.clamp(lp.x, -1.48, 1.48), THREE.MathUtils.clamp(lp.y, -0.82, 0.72), 0.012 + Math.random() * 0.002);
-      obj.rotation.set(0, 0, (Math.random() - 0.5) * 0.08);
-      return;
-    }
-    scene.attach(obj); obj.lookAt(camera.getWorldPosition(V()));
-  }
-}
-function undoLast() {
-  const a = lastAction; if (!a) return hideToast();
-  const g = a.obj;
-  if (g.userData.kind === 'doc') {
-    const t = trays.find((x) => x.kind === g.userData.doc.state); if (t) t.count = Math.max(0, t.count - 1);
-    scene.attach(g); g.position.copy(g.userData.home.p); g.quaternion.copy(g.userData.home.q);
-    setDocState(g, null);
-  }
-  lastAction = null; hideToast();
-}
-
-// ---------- stations ----------
-const stationGroups = {};
-let board;
-function stationGroup(st) {
-  const g = new THREE.Group(); g.position.set(...st.pos); g.rotation.y = st.yaw; scene.add(g);
-  stationGroups[st.id] = g; return g;
-}
-function infoCard(parent, w, h, title, lines, x, y, z, tiltX = 0) {
-  const m = labelPlane(w, h, (c, W, H) => {
-    panelBg(c, W, H, { radius: 0.06 });
-    c.textAlign = 'left'; c.fillStyle = '#e6c878'; c.font = `600 ${Math.min(H * 0.17, W * 0.07)}px ${SERIF}`;
-    c.fillText(title, W * 0.06, H * 0.24);
-    c.fillStyle = '#e8dfc8'; c.font = `500 ${Math.min(H * 0.09, W * 0.04)}px ${SANS}`;
-    let yy = H * 0.42;
-    for (const l of lines) yy = wrap(c, l, W * 0.06, yy, W * 0.88, Math.min(H * 0.11, W * 0.048), 3) + H * 0.02;
-  }, { px: 1600 });
-  m.position.set(x, y, z); m.rotation.x = tiltX; parent.add(m); return m;
-}
-function buildStations() {
-  for (const st of STATIONS) {
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.26, 0.31, 48), glowMat(GOLD_HI, 0.85));
-    ring.rotation.x = -PI / 2; ring.position.set(st.pos[0], 0.012, st.pos[2]); scene.add(ring);
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(0.34, 32), glowMat(GOLD, 0.07));
-    disc.rotation.x = -PI / 2; disc.position.set(st.pos[0], 0.01, st.pos[2]); scene.add(disc);
-    register(disc, 'ring', disc, { station: st, ring });
-    if (st.id !== 'desk') { const s = sprite(st.name); s.position.set(st.pos[0], 2.35, st.pos[2]); scene.add(s); }
-  }
-
-  // Laser bench
-  {
-    const g = stationGroup(STATIONS[1]);
-    box(1.5, 0.05, 0.75, MAT.bench, 0, 0.9, -1.25, g);
-    box(1.52, 0.01, 0.77, MAT.gold, 0, 0.87, -1.25, g);
-    for (const [x, z] of [[-0.7, -0.92], [0.7, -0.92], [-0.7, -1.58], [0.7, -1.58]]) box(0.05, 0.88, 0.05, MAT.leather, x, 0.44, z, g);
-    const sheet = labelPlane(0.432, 0.406, (c, w, h) => {
-      c.fillStyle = '#c99b63'; c.fillRect(0, 0, w, h);
-      for (let i = 0; i < 70; i++) { c.strokeStyle = `rgba(110,70,30,${0.08 + (i % 5) * 0.03})`; c.lineWidth = 1 + (i % 3); c.beginPath(); const y = (i / 70) * h; c.moveTo(0, y); c.bezierCurveTo(w * 0.3, y + 6, w * 0.6, y - 6, w, y + 3); c.stroke(); }
-      c.strokeStyle = '#d0342c'; c.lineWidth = 4; rr(c, w * 0.12, h * 0.15, w * 0.76, h * 0.62, 40); c.stroke();
-      c.fillStyle = 'rgba(40,24,10,0.85)'; c.textAlign = 'center'; c.font = `700 ${h * 0.11}px ${SERIF}`; c.fillText('SAMPLE', w / 2, h * 0.5);
-      c.font = `600 ${h * 0.045}px ${SANS}`; c.fillText('red = cut · dark = engrave', w / 2, h * 0.88);
-    }, { px: 2400, transparent: false });
-    sheet.rotation.x = -PI / 2; sheet.position.set(0, 0.927, -1.2); g.add(sheet);
-    infoCard(g, 0.9, 0.36, 'Laser Bench', ['Real-size preview of your vector files arrives in Stage 3.', 'Sheet shown at about 432 × 406 mm, the xTool D1 Pro work area.'], 0, 1.45, -1.5, -0.15);
-  }
-  // Book stand
-  {
-    const g = stationGroup(STATIONS[2]);
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 1.0, 16), MAT.gold); post.position.set(0, 0.5, -1.0); g.add(post);
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.24, 0.03, 32), MAT.leather); base.position.set(0, 0.015, -1.0); g.add(base);
-    const top = new THREE.Group(); top.position.set(0, 1.04, -1.0); top.rotation.x = -0.55; g.add(top);
-    box(0.56, 0.02, 0.38, MAT.leather, 0, 0, 0, top);
-    box(0.57, 0.006, 0.012, MAT.gold, 0, 0.01, 0.19, top);
-    const page = (left) => labelPlane(0.24, 0.32, (c, w, h) => {
-      c.fillStyle = '#fbf8f1'; c.fillRect(0, 0, w, h);
-      c.fillStyle = '#16120a'; c.textAlign = 'center';
-      if (left) { c.font = `700 ${h * 0.07}px ${SERIF}`; c.fillText('Funny Bones Kids', w / 2, h * 0.3); c.font = `500 ${h * 0.045}px ${SANS}`; c.fillText('Book stand preview', w / 2, h * 0.4); }
-      else { c.strokeStyle = '#16120a'; c.lineWidth = 3; c.beginPath(); c.arc(w / 2, h * 0.42, w * 0.25, 0, PI * 2); c.stroke(); c.font = `500 ${h * 0.04}px ${SANS}`; c.fillText('Your pages appear here in Stage 3', w / 2, h * 0.86); }
-    }, { px: 2200, transparent: false });
-    const L = page(true), R = page(false);
-    L.rotation.x = -PI / 2; L.position.set(-0.125, 0.016, 0); L.rotation.y = 0.04;
-    R.rotation.x = -PI / 2; R.position.set(0.125, 0.016, 0); R.rotation.y = -0.04;
-    top.add(L, R);
-    infoCard(g, 0.8, 0.3, 'Book Stand', ['Flip pages, pull one out and drop it in Completed or Revised (Stage 3).'], 0, 1.62, -1.25, -0.1);
-  }
-  // Apparel corner
-  {
-    const g = stationGroup(STATIONS[3]);
-    const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.34, 0.12, 40), MAT.leather); ped.position.set(0, 0.06, -1.4); g.add(ped);
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.008, 6, 48), MAT.gold); rim.rotation.x = PI / 2; rim.position.set(0, 0.12, -1.4); g.add(rim);
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.85, 12), MAT.gold); pole.position.set(0, 0.55, -1.4); g.add(pole);
-    const pts = [[0.0, 0], [0.14, 0], [0.155, 0.1], [0.145, 0.25], [0.165, 0.4], [0.2, 0.5], [0.19, 0.56], [0.085, 0.61], [0.05, 0.66], [0.0, 0.68]].map(([r, y]) => new THREE.Vector2(r, y));
-    const form = new THREE.Mesh(new THREE.LatheGeometry(pts, 32), MAT.form); form.scale.set(1, 1, 0.62); form.position.set(0, 0.97, -1.4); g.add(form);
-    const neckRing = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.006, 6, 24), MAT.gold); neckRing.rotation.x = PI / 2; neckRing.position.set(0, 1.63, -1.4); g.add(neckRing);
-    infoCard(g, 0.8, 0.3, 'Apparel Corner', ['Working Bones designs on a 3D shirt (Stage 4 — needs a licensed 3D model).'], 0.75, 1.5, -1.3, 0);
-  }
-  // Brainstorm wall
-  {
-    const g = stationGroup(STATIONS[4]);
-    board = new THREE.Group(); board.position.set(0, 1.55, -1.9); g.add(board);
-    const panel = labelPlane(3.3, 1.95, (c, w, h) => {
-      c.fillStyle = '#faf6ee'; c.fillRect(0, 0, w, h);
-      c.textAlign = 'left'; c.fillStyle = '#9c7a2c'; c.font = `600 ${h * 0.07}px ${SERIF}`;
-      c.fillText('BRAINSTORM', w * 0.03, h * 0.1);
-      c.fillStyle = '#7a7264'; c.font = `500 ${h * 0.03}px ${SANS}`; c.fillText('apps · products · books · anything we come up with', w * 0.25, h * 0.095);
-      const cols = ['APP IDEAS', 'PRODUCT IDEAS', 'BOOK IDEAS', 'QUESTIONS'];
-      cols.forEach((t, i) => {
-        const x = w * (0.03 + i * 0.245);
-        c.fillStyle = '#c9a24a'; c.fillRect(x, h * 0.14, w * 0.225, 3);
-        c.fillStyle = '#2b251c'; c.font = `600 ${h * 0.032}px ${SANS}`; c.fillText(t, x, h * 0.19);
-      });
-    }, { px: 600, transparent: false });
-    board.add(panel);
-    box(3.34, 0.02, 0.03, MAT.gold, 0, 0.985, 0, board); box(3.34, 0.02, 0.03, MAT.gold, 0, -0.985, 0, board);
-    box(0.02, 1.99, 0.03, MAT.gold, -1.66, 0, 0, board); box(0.02, 1.99, 0.03, MAT.gold, 1.66, 0, 0, board);
-    const samples = [['Sample note — grab me and move me', -1.25, 0.45], ['Laser pilot · 12 products (awaiting approval)', -0.45, 0.45], ['Book two · kid-friendly rewrite', 0.35, 0.45], ['Use + New note to add ideas', 1.15, 0.45]];
-    samples.forEach(([t, x, y]) => addNote(t, x, y));
-    const add = makeButton(0.34, 0.1, '+ New note', () => addNote(`Idea ${++noteCount}`, -1.3 + ((noteCount * 0.34) % 2.6), -0.6, 'Voice text arrives in Stage 2'), { parent: board });
-    add.position.set(1.4, -0.86, 0.02);
-  }
-  // Pipeline, trophies, scoreboard
-  {
-    const g = stationGroup(STATIONS[5]);
-    infoCard(g, 1.6, 0.9, 'Fourthwall sales', ['Not connected in this preview.', 'When it connects, every number shows a LIVE badge and the time it was pulled — never made-up figures.'], 0, 1.75, -2.32);
-    const pipe = labelPlane(1.7, 0.7, (c, w, h) => {
-      panelBg(c, w, h, { radius: 0.05 });
-      c.textAlign = 'left'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.11}px ${SERIF}`; c.fillText('Pipeline', w * 0.04, h * 0.17);
-      ['Idea', 'Draft', 'Revised', 'Approved'].forEach((t, i) => {
-        const x = w * (0.04 + i * 0.24);
-        c.fillStyle = '#1b1b1f'; rr(c, x, h * 0.28, w * 0.21, h * 0.5, 14); c.fill();
-        c.strokeStyle = '#c9a24a'; c.lineWidth = 2; c.stroke();
-        c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.075}px ${SANS}`; c.fillText(t, x + w * 0.015, h * 0.38);
-        c.fillStyle = '#8f887a'; c.font = `500 ${h * 0.055}px ${SANS}`; c.fillText('—', x + w * 0.015, h * 0.5);
-      });
-      c.fillStyle = '#a59f92'; c.font = `500 ${h * 0.055}px ${SANS}`; c.fillText('Live counts from Business HQ arrive in Stage 2.', w * 0.04, h * 0.9);
-    }, { px: 1100 });
-    pipe.position.set(-2.3, 1.75, -2.32); g.add(pipe);
-    for (const y of [1.25, 1.85]) { box(1.6, 0.03, 0.25, MAT.leather, 2.3, y, -2.22, g); box(1.6, 0.008, 0.252, MAT.gold, 2.3, y + 0.016, -2.22, g); }
-    for (let i = 0; i < 3; i++) {
-      const pl = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.06, 20), MAT.gold);
-      pl.position.set(1.85 + i * 0.45, 1.3, -2.22); g.add(pl);
-    }
-    infoCard(g, 1.5, 0.32, 'Trophy shelf', ['Approved work gets displayed here.'], 2.3, 2.3, -2.32);
-  }
-}
-
-// ---------- brainstorm notes ----------
-let noteCount = 0;
+let board, boardPanel, noteCount = 0;
 function drawNote(text, sub) {
   return (c, w, h) => {
     c.fillStyle = '#f1dc9c'; c.fillRect(0, 0, w, h);
@@ -840,128 +512,670 @@ function drawNote(text, sub) {
   };
 }
 function addNote(text, x, y, sub = '') {
-  const g = new THREE.Group();
+  const g = new THREE.Group(); g.userData = { kind: 'note', text };
   const paper = labelPlane(0.24, 0.24, drawNote(text, sub), { px: 2000, transparent: false, side: THREE.DoubleSide });
-  const frame = new THREE.Mesh(new THREE.PlaneGeometry(0.256, 0.256), glowMat(GOLD_HI, 1)); frame.position.z = -0.0015; frame.visible = false;
-  g.add(frame, paper);
-  g.userData = { kind: 'note', paper, frame, heldBy: null };
-  board.add(g);
-  g.position.set(x, y, 0.012); g.rotation.z = (Math.random() - 0.5) * 0.08;
-  register(paper, 'note', g);
-  return g;
+  decal(paper.material); g.add(paper); g.userData.paper = paper;
+  equipSheet(g, 0.24, 0.24, MAT.noteBall);
+  board.add(g); g.position.set(x, y, 0.012); g.rotation.z = (Math.random() - 0.5) * 0.08;
+  g.userData.home = { board: true, x, y };
+  register(paper, 'note', g); return g;
 }
 
-// ---------- focus mode (dims the room while you hold something) ----------
-const focusShell = new THREE.Mesh(new THREE.SphereGeometry(1.05, 24, 16),
-  new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, side: THREE.BackSide, depthWrite: false, toneMapped: false }));
-focusShell.renderOrder = 10; camera.add(focusShell);
+// ================= the crew (Ava, Claude, Bob) =================
+const crew = [];
+const LOOKS = {
+  commander: { skin: 0xc68c6a, hair: 0x1a1210, jacket: 0x111114, trim: GOLD, pants: 0x101012, accent: 0xf4e2b4, sleeves: 'jacket' },
+  pilot:     { skin: 0xe2b392, hair: 0x5a3b22, jacket: 0x5b3a22, trim: 0x8a6a3a, pants: 0x2f3a2c, accent: 0xa9c1e3, sleeves: 'jacket' },
+  engineer:  { skin: 0x9a6748, hair: 0x231710, jacket: 0x2b3038, trim: COPPER, pants: 0x1e2228, accent: 0x7fe3d4, sleeves: 'rolled' },
+};
+function partSphere(r, mat, phiLen = PI * 2, thetaLen = PI, thetaStart = 0) {
+  return new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16, 0, phiLen, thetaStart, thetaLen), mat);
+}
+function makeCrew(spec) {
+  const L = LOOKS[spec.role];
+  const skin = std(L.skin, 0.62, 0.0, 0.25), hairM = std(L.hair, 0.7, 0.05, 0.3);
+  const jacket = std(L.jacket, spec.role === 'pilot' ? 0.75 : 0.45, spec.role === 'pilot' ? 0.05 : 0.2, 0.5);
+  const trim = spec.role === 'commander' ? MAT.gold : std(L.trim, 0.35, 0.8, 0.8);
+  const pants = std(L.pants, 0.7, 0.05, 0.3), boot = std(0x0d0d0f, 0.45, 0.2, 0.5);
+  const [x, z] = polar(CHAIR_R, spec.ang);
+  const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = faceCenter(x, z); scene.add(g);
 
-// ---------- teleport ----------
+  // chair
+  box(0.52, 0.08, 0.5, MAT.leather, 0, 0.44, 0, g);
+  box(0.54, 0.82, 0.08, MAT.leather, 0, 0.9, -0.27, g);
+  box(0.545, 0.015, 0.085, MAT.gold, 0, 1.315, -0.27, g);
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.38, 12), MAT.gold); post.position.y = 0.21; g.add(post);
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.28, 0.03, 24), MAT.leather); base.position.y = 0.015; g.add(base);
+
+  const hips = new THREE.Group(); hips.position.set(0, 0.5, 0.02); g.add(hips);
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.3, 6, 16), jacket); torso.position.y = 0.31; torso.scale.set(1.15, 1, 0.75); hips.add(torso);
+  // outfit details
+  if (spec.role === 'commander') {
+    for (const s of [-1, 1]) { const sb = box(0.1, 0.012, 0.07, MAT.gold, s * 0.13, 0.6, 0, hips); sb.rotation.z = -s * 0.25; }
+    const sash = box(0.022, 0.4, 0.008, MAT.gold, 0.02, 0.36, 0.118, hips); sash.rotation.z = 0.5;
+    const badge = new THREE.Mesh(new THREE.OctahedronGeometry(0.018, 0), MAT.gold); badge.position.set(-0.075, 0.5, 0.115); hips.add(badge);
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.07, 0.05, 20, 1, true), std(0x111114, 0.4, 0.2, 0.5, { side: THREE.DoubleSide })); collar.position.y = 0.66; hips.add(collar);
+    const collarRim = new THREE.Mesh(new THREE.TorusGeometry(0.063, 0.005, 6, 24), MAT.gold); collarRim.rotation.x = PI / 2; collarRim.position.y = 0.685; hips.add(collarRim);
+  } else if (spec.role === 'pilot') {
+    box(0.13, 0.36, 0.01, std(0xd8cbb0, 0.8, 0, 0.2), 0, 0.37, 0.114, hips); // open jacket, cream undershirt
+    for (const s of [-1, 1]) { const lap = box(0.06, 0.16, 0.012, jacket, s * 0.075, 0.5, 0.118, hips); lap.rotation.z = s * 0.35; }
+    const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.028, 8, 20), std(0x4b5a3a, 0.9, 0, 0.2)); scarf.rotation.x = PI / 2; scarf.position.y = 0.64; hips.add(scarf);
+    const patch = new THREE.Mesh(new THREE.CircleGeometry(0.03, 16), std(0xb07a3a, 0.6, 0.2, 0.4)); patch.position.set(-0.17, 0.52, 0.03); patch.rotation.y = -1.2; hips.add(patch);
+  } else {
+    box(0.15, 0.34, 0.01, std(0xe2dccd, 0.8, 0, 0.2), 0, 0.38, 0.113, hips); // shirt under the vest
+    for (const s of [-1, 1]) { const pipe = box(0.008, 0.36, 0.008, trim, s * 0.08, 0.38, 0.118, hips); pipe.rotation.z = s * 0.12; }
+    const collar = new THREE.Mesh(new THREE.TorusGeometry(0.066, 0.012, 8, 24), trim); collar.rotation.x = PI / 2; collar.position.y = 0.645; hips.add(collar);
+    const tool = box(0.03, 0.06, 0.02, trim, 0.09, 0.42, 0.12, hips); tool.rotation.z = 0.1;
+  }
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.043, 0.048, 0.1, 12), skin); neck.position.y = 0.69; hips.add(neck);
+
+  // head + face
+  const head = new THREE.Group(); head.position.y = 0.82; hips.add(head);
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.105, 28, 20), skin); skull.scale.set(0.9, 1.1, 0.97); head.add(skull);
+  const eyeW = std(0xf6f3ee, 0.3, 0, 0.3), eyeD = std(0x1b120c, 0.25, 0, 0.4), brow = hairM;
+  for (const s of [-1, 1]) {
+    const e = new THREE.Mesh(new THREE.SphereGeometry(0.0145, 12, 10), eyeW); e.position.set(s * 0.034, 0.012, 0.086); e.scale.z = 0.6; head.add(e);
+    const p = new THREE.Mesh(new THREE.SphereGeometry(0.008, 10, 8), eyeD); p.position.set(s * 0.034, 0.012, 0.094); head.add(p);
+    const b = box(0.032, 0.007, 0.008, brow, s * 0.035, 0.04, 0.09, head); b.rotation.z = -s * (spec.role === 'pilot' ? 0.18 : 0.08);
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.02, 10, 8), skin); ear.position.set(s * 0.093, 0.0, 0.0); ear.scale.set(0.5, 1, 0.8); head.add(ear);
+  }
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.014, 10, 8), skin); nose.position.set(0, -0.008, 0.1); nose.scale.set(0.9, 1.3, 1); head.add(nose);
+  const mouth = box(0.034, 0.006, 0.006, std(0x7a2f2a, 0.5, 0, 0.3), 0, -0.045, 0.092, head);
+  // hair: a cap that sits above the brows, plus the back of the head
+  const cap = partSphere(0.111, hairM, PI * 2, spec.role === 'engineer' ? 0.95 : 1.02); cap.scale.set(0.93, 1.1, 1.0); head.add(cap);
+  const back = partSphere(0.109, hairM, PI, spec.role === 'commander' ? PI * 0.55 : PI * 0.42, 0.5); back.rotation.y = PI; back.scale.set(0.93, 1.09, 1.0); head.add(back);
+  if (spec.role === 'commander') {
+    const bun = new THREE.Mesh(new THREE.SphereGeometry(0.045, 16, 12), hairM); bun.position.set(0, 0.075, -0.085); head.add(bun);
+    const pin = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.005, 6, 20), MAT.gold); pin.position.set(0, 0.075, -0.085); pin.rotation.x = 0.6; head.add(pin);
+    for (const s of [-1, 1]) { const ear = new THREE.Mesh(new THREE.SphereGeometry(0.006, 8, 6), MAT.gold); ear.position.set(s * 0.095, -0.025, 0.005); head.add(ear); }
+  } else if (spec.role === 'pilot') {
+    for (let i = 0; i < 9; i++) { const t = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), hairM); const a = (i / 9) * PI * 2; t.position.set(Math.cos(a) * 0.06, 0.1 + (i % 3) * 0.008, Math.sin(a) * 0.055); head.add(t); }
+    const stub = partSphere(0.104, std(0x3a2a1c, 0.95, 0, 0.1, { transparent: true, opacity: 0.45 }), PI, 0.75, PI - 0.95);
+    stub.scale.set(0.92, 1.1, 1.0); stub.position.z = 0.004; head.add(stub);
+  } else {
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.103, 0.008, 6, 32), std(0x2a2420, 0.5, 0.2, 0.5)); band.rotation.x = PI / 2 - 0.25; band.position.y = 0.06; head.add(band);
+    for (const s of [-1, 1]) {
+      const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.02, 16), trim); lens.rotation.x = PI / 2 - 0.4; lens.position.set(s * 0.034, 0.075, 0.075); head.add(lens);
+      const glass = new THREE.Mesh(new THREE.CircleGeometry(0.017, 16), glowMat(0x7fe3d4, 0.8)); glass.position.set(s * 0.034, 0.083, 0.085); glass.rotation.x = -0.4; head.add(glass);
+    }
+  }
+
+  // arms
+  const arms = [];
+  const forearmMat = L.sleeves === 'rolled' ? skin : jacket;
+  for (const side of [-1, 1]) {
+    const sh = new THREE.Group(); sh.position.set(side * 0.2, 0.53, 0); hips.add(sh);
+    const ua = new THREE.Mesh(new THREE.CapsuleGeometry(0.047, 0.2, 4, 10), jacket); ua.position.y = -0.14; sh.add(ua);
+    const elbow = new THREE.Group(); elbow.position.y = -0.29; sh.add(elbow);
+    const fa = new THREE.Mesh(new THREE.CapsuleGeometry(0.041, 0.18, 4, 10), forearmMat); fa.position.y = -0.13; elbow.add(fa);
+    if (L.sleeves === 'rolled') { const roll = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.014, 6, 18), jacket); roll.rotation.x = PI / 2; roll.position.y = -0.02; elbow.add(roll); }
+    const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.007, 6, 18), trim); cuff.rotation.x = PI / 2; cuff.position.y = -0.22; elbow.add(cuff);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.044, 14, 10), skin); hand.position.y = -0.27; hand.scale.set(0.85, 1.15, 0.55); elbow.add(hand);
+    if (spec.role === 'engineer' && side < 0) {
+      const holo = new THREE.Mesh(new THREE.PlaneGeometry(0.08, 0.05), glowMat(0x7fe3d4, 0.55)); holo.position.set(0, -0.2, 0.06); holo.rotation.x = -0.3; elbow.add(holo);
+    }
+    sh.rotation.set(-0.7, 0, side * 0.08); elbow.rotation.x = -0.85;
+    arms.push({ side, sh, el: elbow });
+  }
+  for (const side of [-1, 1]) {
+    const th = new THREE.Mesh(new THREE.CapsuleGeometry(0.068, 0.3, 4, 10), pants); th.rotation.x = PI / 2; th.position.set(side * 0.095, 0.0, 0.2); hips.add(th);
+    const sn = new THREE.Mesh(new THREE.CapsuleGeometry(0.058, 0.3, 4, 10), pants); sn.position.set(side * 0.095, -0.23, 0.4); hips.add(sn);
+    const bt = box(0.09, 0.07, 0.17, boot, side * 0.095, -0.45, 0.44, hips);
+  }
+
+  // placard on the directors' table, facing you
+  const [px, pz] = polar(BOARD_T.r0 + 0.13, spec.ang);
+  const plac = new THREE.Group(); plac.position.set(px, BOARD_T.y, pz); plac.rotation.y = faceCenter(px, pz); scene.add(plac);
+  box(0.36, 0.075, 0.05, MAT.leather, 0, 0.0375, 0, plac);
+  box(0.362, 0.006, 0.052, MAT.gold, 0, 0.003, 0, plac);
+  const face = labelPlane(0.344, 0.064, (c, w, h) => {
+    c.fillStyle = '#0d0d0f'; c.fillRect(0, 0, w, h);
+    c.strokeStyle = '#c9a24a'; c.lineWidth = h * 0.035; c.strokeRect(h * 0.06, h * 0.06, w - h * 0.12, h - h * 0.12);
+    c.textAlign = 'center'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.46}px ${SERIF}`; c.fillText(spec.name, w / 2, h * 0.53);
+    c.font = `600 ${h * 0.15}px ${SANS}`; c.fillStyle = '#c2b693'; c.fillText(spec.title.toUpperCase().split('').join(' '), w / 2, h * 0.82);
+  }, { px: 2800, transparent: false });
+  face.position.set(0, 0.0375, 0.0256); plac.add(face);
+
+  // invisible hand-off target around the director
+  const proxy = addTarget(new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 8), ghostMat), 'director', null);
+  proxy.position.set(0, 1.0, 0.05); g.add(proxy);
+
+  const D = { spec, g, hips, head, mouth, arms, nod: 0, proxy };
+  proxy.userData.target.ref = D;
+  crew.push(D); return D;
+}
+
+let speaker = null;
+const marker = new THREE.Group();
+{
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.045, 0), glowMat(GOLD_HI, 1)); gem.scale.set(1, 1.5, 1); marker.add(gem);
+  const halo = new THREE.Mesh(new THREE.RingGeometry(0.06, 0.07, 32), glowMat(GOLD_HI, 0.5)); halo.rotation.x = -PI / 2; halo.position.y = -0.09; marker.add(halo);
+  marker.visible = false; scene.add(marker);
+}
+const consoleButtons = [];
+function setSpeaker(name) {
+  speaker = name || null;
+  document.querySelectorAll('#speakRow button').forEach((b) => b.classList.toggle('on', (b.dataset.sp || null) === speaker));
+  consoleButtons.forEach((b) => b.userData.setOn((b.userData.sp || null) === speaker));
+}
+function animateCrew(t, dt) {
+  const cam = camera.getWorldPosition(V()), k = Math.min(1, dt * 5);
+  const S = crew.find((x) => x.spec.name === speaker);
+  for (const D of crew) {
+    const talking = D === S;
+    const target = S && !talking ? S.head.getWorldPosition(V()) : cam;
+    const local = D.g.worldToLocal(target.clone());
+    const yaw = clamp(Math.atan2(local.x, local.z), -1.0, 1.0);
+    D.head.rotation.y = lerp(D.head.rotation.y, yaw * 0.75, k);
+    D.hips.rotation.y = lerp(D.hips.rotation.y, yaw * 0.22, k);
+    const ph = D.spec.phase;
+    D.nod = Math.max(0, D.nod - dt);
+    const nod = D.nod > 0 ? 0.18 * Math.sin((1 - D.nod) * PI * 3) : 0;
+    if (talking) {
+      D.head.rotation.x = lerp(D.head.rotation.x, 0.05 * Math.sin(t * 4.7 + ph) + nod, k);
+      for (const a of D.arms) {
+        const o = a.side > 0 ? 0 : 1.9;
+        a.sh.rotation.x = lerp(a.sh.rotation.x, -0.95 + 0.28 * Math.sin(t * 2.4 + o + ph), k);
+        a.sh.rotation.z = lerp(a.sh.rotation.z, a.side * (0.2 + 0.14 * Math.sin(t * 1.7 + o)), k);
+        a.el.rotation.x = lerp(a.el.rotation.x, -0.9 + 0.4 * Math.sin(t * 3.1 + o * 1.3), k);
+      }
+      D.mouth.scale.y = 1 + 3.2 * Math.abs(Math.sin(t * 11 + Math.sin(t * 3) * 2));
+    } else {
+      D.head.rotation.x = lerp(D.head.rotation.x, 0.02 * Math.sin(t * 0.8 + ph) + nod, k);
+      for (const a of D.arms) {
+        a.sh.rotation.x = lerp(a.sh.rotation.x, -0.7, k * 0.6);
+        a.sh.rotation.z = lerp(a.sh.rotation.z, a.side * 0.08, k * 0.6);
+        a.el.rotation.x = lerp(a.el.rotation.x, -0.85, k * 0.6);
+      }
+      D.mouth.scale.y = lerp(D.mouth.scale.y, 1, k);
+    }
+  }
+  if (S) {
+    const tgt = S.head.getWorldPosition(V()).add(new THREE.Vector3(0, 0.32 + 0.025 * Math.sin(t * 2.5), 0));
+    if (!marker.visible) { marker.position.copy(tgt); marker.visible = true; }
+    marker.position.lerp(tgt, Math.min(1, dt * 6)); marker.rotation.y += dt * 1.6;
+  } else marker.visible = false;
+}
+
+// ================= desk console + welcome card =================
+const SEAT_KEY = 'hq_vr_seat_offset';
+let seatOffset = 0;
+try { seatOffset = clamp(parseFloat(localStorage.getItem(SEAT_KEY)) || 0, -0.3, 0.7); } catch (e) {}
+function setSeat(cmd) {
+  if (cmd === 'sit') seatOffset = 0.3; else if (cmd === 'stand') seatOffset = 0;
+  else if (cmd === 'up') seatOffset -= 0.05; else if (cmd === 'down') seatOffset += 0.05;
+  seatOffset = clamp(Math.round(seatOffset * 100) / 100, -0.3, 0.7);
+  try { localStorage.setItem(SEAT_KEY, String(seatOffset)); } catch (e) {}
+  if (renderer.xr.isPresenting) rig.position.y = seatOffset;
+  showToast(seatOffset > 0.15 ? 'Sitting height' : 'Standing height', `Desk adjusted (${Math.round(seatOffset * 100)} cm). Applies in VR.`, false);
+}
+function buildConsole() {
+  const [x, z] = polar(1.0, 0.62);
+  const g = new THREE.Group(); g.position.set(x, DESK.y + 0.05, z); g.rotation.set(0, faceCenter(x, z), 0); scene.add(g);
+  const tilt = new THREE.Group(); tilt.rotation.x = -0.85; g.add(tilt);
+  const title = labelPlane(0.46, 0.04, (c, w, h) => { c.textAlign = 'center'; c.fillStyle = '#c9bea4'; c.font = `600 ${h * 0.55}px ${SANS}`; c.fillText("DEMO · WHO'S SPEAKING", w / 2, h * 0.7); }, { px: 2400 });
+  title.position.y = 0.065; tilt.add(title);
+  [['Ava', 'Ava'], ['Claude', 'Claude'], ['Bob', 'Bob'], ['Quiet', null]].forEach(([label, sp], i) => {
+    const b = makeButton(0.105, 0.06, label, () => setSpeaker(sp), { parent: tilt }); b.position.set(-0.18 + i * 0.12, 0, 0); b.userData.sp = sp; consoleButtons.push(b);
+  });
+  const t2 = labelPlane(0.46, 0.04, (c, w, h) => { c.textAlign = 'center'; c.fillStyle = '#c9bea4'; c.font = `600 ${h * 0.55}px ${SANS}`; c.fillText('DESK HEIGHT', w / 2, h * 0.7); }, { px: 2400 });
+  t2.position.y = -0.07; tilt.add(t2);
+  [['Sitting', 'sit'], ['Standing', 'stand'], ['Desk ▼', 'down'], ['Desk ▲', 'up']].forEach(([label, cmd], i) => {
+    const b = makeButton(0.105, 0.06, label, () => setSeat(cmd), { parent: tilt }); b.position.set(-0.18 + i * 0.12, -0.13, 0);
+  });
+}
+function greeting() { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; }
+function buildWelcome() {
+  const card = labelPlane(0.5, 0.36, (c, w, h) => {
+    panelBg(c, w, h, { radius: 0.05 });
+    c.textAlign = 'left'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.08}px ${SERIF}`; c.fillText(`${greeting()}, Michael`, w * 0.06, h * 0.14);
+    c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.04}px ${SANS}`; c.fillText('Executive Office · preview v2', w * 0.06, h * 0.22);
+    c.font = `500 ${h * 0.043}px ${SANS}`; let y = h * 0.32;
+    for (const line of [
+      'Point and pull the trigger (or pinch) to pick up a paper. It stays where it is.',
+      'Thumbstick, or pull your hand in, to bring it closer. Push to send it away.',
+      'Point at Ava, Claude, Bob, a box or the trash and let go: it glides there. Or toss it.',
+      'Grab a gold corner, or use both hands, to resize. Squeeze the grip (or make a fist) to crumple.',
+    ]) { c.fillStyle = '#c9a24a'; c.fillText('•', w * 0.06, y); c.fillStyle = '#f0e6cc'; y = wrap(c, line, w * 0.1, y, w * 0.84, h * 0.055, 3) + h * 0.012; }
+    c.fillStyle = '#e09a6a'; c.font = `600 ${h * 0.038}px ${SANS}`;
+    wrap(c, 'DEMO: nothing saves yet. Sign in with a phone code to get ready for live data.', w * 0.06, h * 0.93, w * 0.88, h * 0.045, 2);
+  }, { px: 2600 });
+  const [x, z] = polar(0.98, -0.66);
+  card.position.set(x, DESK.y + 0.12, z); card.rotation.set(0, faceCenter(x, z), 0); card.rotateX(-0.75); scene.add(card);
+}
+
+// ================= toast + undo =================
+let lastAction = null, toastTimer = 0;
+const toast3d = new THREE.Group(); toast3d.position.set(0, 1.25, -0.85); toast3d.visible = false; scene.add(toast3d);
+let toastMsg = { t: '', s: '' };
+function drawToast(c, w, h) {
+  panelBg(c, w, h, { radius: 0.2 });
+  c.textAlign = 'left'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.3}px ${SERIF}`; c.fillText(toastMsg.t.slice(0, 48), w * 0.04, h * 0.45);
+  c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.18}px ${SANS}`; c.fillText(toastMsg.s.slice(0, 80), w * 0.04, h * 0.78);
+}
+const toastPanel = labelPlane(0.62, 0.11, drawToast, { px: 2000 }); toast3d.add(toastPanel);
+const undo3d = makeButton(0.13, 0.075, 'Undo', () => undoLast(), { parent: toast3d }); undo3d.position.set(0.39, 0, 0);
+function showToast(t, s, undoable = true) {
+  toastMsg = { t, s }; repaint(toastPanel.userData.tex, drawToast);
+  $('#toastT').textContent = t; $('#toastS').textContent = s; $('#undoBtn').hidden = !undoable; undo3d.visible = undoable;
+  $('#toast').classList.add('show'); toastTimer = 7;
+}
+function hideToast() { $('#toast').classList.remove('show'); toastTimer = 0; }
+$('#undoBtn').addEventListener('click', () => undoLast());
+
+// ================= placing, gliding, flying =================
+function setWorldPos(obj, p) { obj.position.copy(obj.parent ? obj.parent.worldToLocal(p.clone()) : p); }
+function layFlatAt(obj, p, yaw = null) {
+  scene.attach(obj); obj.position.copy(p);
+  const a = Math.atan2(p.x, -p.z);
+  obj.rotation.set(-PI / 2, 0, yaw ?? (-a * 0.9 + (Math.random() - 0.5) * 0.12));
+}
+function setCrumpled(obj, on) {
+  const u = obj.userData; u.crumpled = on;
+  u.paper.visible = !on; u.ball.visible = on; u.frame.visible = false; u.handles.visible = false;
+  if (on) obj.scale.setScalar(1);
+}
+function goHome(obj) {
+  const u = obj.userData; setCrumpled(obj, false); obj.visible = true; obj.scale.setScalar(1); u.fly = u.glide = null;
+  if (u.home.board) { board.attach(obj); obj.position.set(u.home.x, u.home.y, 0.012); obj.rotation.set(0, 0, 0); }
+  else { scene.attach(obj); obj.position.copy(u.home.p); obj.quaternion.copy(u.home.q); }
+}
+function clearState(obj) {
+  const u = obj.userData;
+  if (u.kind === 'doc' && u.doc.state) { const t = trays.find((x) => x.kind === u.doc.state); if (t) t.count = Math.max(0, t.count - 1); setDocState(obj, null); }
+}
+// Final landing spots ------------------------------------------------
+function intoTray(obj, t) {
+  if (obj.userData.kind !== 'doc') { layFlatAt(obj, t.spot()); return; }
+  setCrumpled(obj, false); obj.scale.setScalar(1);
+  layFlatAt(obj, t.spot(), 0); obj.quaternion.copy(t.g.quaternion).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-PI / 2, 0, (Math.random() - 0.5) * 0.1)));
+  t.count++; t.flash = 1.2; setDocState(obj, t.kind); lastAction = { obj };
+  const title = obj.userData.doc.title;
+  if (t.kind === 'approve') showToast(`Approved: ${title}`, 'Preview only — not saved.');
+  else showToast(`Sent back: ${title}`, 'Next stage: your next spoken sentence becomes the revision note.');
+}
+function toDirector(obj, D) {
+  const [x, z] = polar(BOARD_T.r1 - 0.12, D.spec.ang + (Math.random() - 0.5) * 0.08);
+  setCrumpled(obj, false); obj.scale.setScalar(1);
+  layFlatAt(obj, new THREE.Vector3(x, BOARD_T.y + 0.005, z), D.spec.ang + PI);
+  D.nod = 1; lastAction = { obj };
+  if (obj.userData.kind === 'doc') { setDocState(obj, `handed:${D.spec.name}`); showToast(`Handed to ${D.spec.name}`, `${obj.userData.doc.title} · preview only, not sent yet.`); }
+  else showToast(`Idea handed to ${D.spec.name}`, 'Preview only — not sent yet.');
+}
+function intoTrash(obj) {
+  setCrumpled(obj, true); obj.visible = false; obj.userData.fly = null;
+  trash.items.push(obj); trash.swish++; trash.flash = 1.5; repaint(trashLabel.userData.tex, drawTrashLabel);
+  lastAction = { obj, trash: true };
+  const name = obj.userData.kind === 'doc' ? obj.userData.doc.title : obj.userData.text;
+  showToast('Swish! Trashed', `${name} · Undo or "Restore last" brings it back.`);
+}
+function restoreTrash() {
+  const obj = trash.items.pop(); if (!obj) { showToast('Trash is empty', 'Nothing to restore.', false); return; }
+  goHome(obj); showToast('Restored', 'Back where it started.', false);
+}
+function undoLast() {
+  const a = lastAction; lastAction = null; hideToast(); if (!a) return;
+  if (a.trash) { const i = trash.items.indexOf(a.obj); if (i >= 0) trash.items.splice(i, 1); }
+  clearState(a.obj); goHome(a.obj);
+}
+function stickToBoard(obj, worldPoint) {
+  const lp = board.worldToLocal(worldPoint.clone());
+  setCrumpled(obj, false); board.attach(obj);
+  obj.position.set(clamp(lp.x, -1.48, 1.48), clamp(lp.y, -0.82, 0.72), 0.012 + Math.random() * 0.002);
+  obj.rotation.set(0, 0, (Math.random() - 0.5) * 0.08);
+}
+// Sends a released sheet toward a target in a smooth arc.
+function glideTo(obj, kind, ref, point) {
+  scene.attach(obj);
+  const from = obj.position.clone();
+  let to = point ? point.clone() : V();
+  if (kind === 'director') to = ref.proxy.getWorldPosition(V());
+  if (kind === 'tray') to = ref.g.localToWorld(new THREE.Vector3(0, 0.1, 0));
+  if (kind === 'trash') to = new THREE.Vector3(trash.x, trash.top + 0.05, trash.z);
+  obj.userData.glide = { from, to, t: 0, dur: clamp(from.distanceTo(to) * 0.35, 0.35, 0.9), kind, ref, point };
+}
+function finishGlide(obj, gl) {
+  obj.userData.glide = null;
+  if (gl.kind === 'director') return toDirector(obj, gl.ref);
+  if (gl.kind === 'tray') return intoTray(obj, gl.ref);
+  if (gl.kind === 'trash') return intoTrash(obj);
+  if (gl.kind === 'board') return stickToBoard(obj, gl.point);
+}
+// Release without a target: drop by position, or fly if thrown.
+function place(obj, vel) {
+  const p = obj.getWorldPosition(V()), u = obj.userData;
+  if (vel && vel.length() > 1.2) { scene.attach(obj); u.fly = { vel: vel.clone().multiplyScalar(1.1), spin: (Math.random() - 0.5) * 8 }; return; }
+  if (u.kind === 'doc' || u.kind === 'note') {
+    for (const t of trays) if (t.contains(p)) return intoTray(obj, t);
+    for (const D of crew) if (D.proxy.getWorldPosition(V()).distanceTo(p) < 0.45) return toDirector(obj, D);
+    if (Math.hypot(p.x - trash.x, p.z - trash.z) < trash.r && p.y < trash.top + 0.3) return intoTrash(obj);
+    if (u.kind === 'note' && !u.crumpled) { const lp = board.worldToLocal(p.clone()); if (Math.abs(lp.z) < 0.45 && Math.abs(lp.x) < 1.62 && Math.abs(lp.y) < 0.98) return stickToBoard(obj, p); }
+    if (overArc(DESK, p)) return layFlatAt(obj, new THREE.Vector3(p.x, DESK.y + (u.crumpled ? 0.045 : 0.005), p.z));
+    if (overArc(BOARD_T, p)) return layFlatAt(obj, new THREE.Vector3(p.x, BOARD_T.y + (u.crumpled ? 0.045 : 0.005), p.z));
+    if (u.crumpled) { scene.attach(obj); u.fly = { vel: V(), spin: 0 }; return; }
+    scene.attach(obj); obj.lookAt(camera.getWorldPosition(V()));
+  }
+}
+function stepFlight(obj, dt) {
+  const u = obj.userData, f = u.fly, p = obj.position;
+  const prevY = p.y;
+  f.vel.y -= (u.crumpled ? 9.0 : 3.5) * dt;
+  if (!u.crumpled) f.vel.multiplyScalar(1 - 0.9 * dt);
+  p.addScaledVector(f.vel, dt);
+  obj.rotation.x += f.spin * dt; obj.rotation.y += f.spin * 0.6 * dt;
+  // trash: dropping in through the top
+  const dT = Math.hypot(p.x - trash.x, p.z - trash.z);
+  if (dT < trash.r - 0.02 && prevY >= trash.top && p.y < trash.top && f.vel.y < 0) return intoTrash(obj);
+  if (dT < trash.r + 0.03 && p.y < trash.top && p.y > 0.02 && dT > trash.r - 0.05) {   // bounce off the side
+    const n = new THREE.Vector3(p.x - trash.x, 0, p.z - trash.z).normalize(); f.vel.reflect(n).multiplyScalar(0.5); p.addScaledVector(n, 0.03);
+  }
+  for (const t of trays) if (t.contains(p) && f.vel.y < 0) { u.fly = null; return intoTray(obj, t); }
+  for (const D of crew) if (D.proxy.getWorldPosition(V()).distanceTo(p) < 0.4) { u.fly = null; return toDirector(obj, D); }
+  const r = u.crumpled ? 0.045 : 0.005;
+  for (const T of [DESK, BOARD_T]) if (overArc(T, p, 0.05) && p.y <= T.y + r && prevY >= T.y + r - 0.02) {
+    if (!u.crumpled) { u.fly = null; return layFlatAt(obj, new THREE.Vector3(p.x, T.y + 0.005, p.z)); }
+    p.y = T.y + r; f.vel.y = Math.abs(f.vel.y) * 0.35; f.vel.x *= 0.7; f.vel.z *= 0.7;
+  }
+  if (u.kind === 'note' && !u.crumpled) { const lp = board.worldToLocal(p.clone()); if (Math.abs(lp.z) < 0.06 && Math.abs(lp.x) < 1.62 && Math.abs(lp.y) < 0.98) { u.fly = null; return stickToBoard(obj, p); } }
+  if (p.y <= r) {
+    p.y = r;
+    if (!u.crumpled) { u.fly = null; obj.rotation.set(-PI / 2, 0, Math.random() * PI); return; }
+    f.vel.y = Math.abs(f.vel.y) * 0.35; f.vel.x *= 0.75; f.vel.z *= 0.75;
+    if (f.vel.length() < 0.15) u.fly = null;
+  }
+  if (Math.abs(p.x) > 6.9) { p.x = Math.sign(p.x) * 6.9; f.vel.x *= -0.5; }
+  if (p.z < -5.9) { p.z = -5.9; f.vel.z *= -0.5; }
+  if (p.z > 4.85) { p.z = 4.85; f.vel.z *= -0.5; }
+}
+
+// ================= stations =================
+const stationGroups = {};
+function stationGroup(st) { const g = new THREE.Group(); g.position.set(...st.pos); g.rotation.y = st.yaw; scene.add(g); stationGroups[st.id] = g; return g; }
+function infoCard(parent, w, h, title, lines, x, y, z, tiltX = 0) {
+  const m = labelPlane(w, h, (c, W, H) => {
+    panelBg(c, W, H, { radius: 0.06 });
+    c.textAlign = 'left'; c.fillStyle = '#e6c878'; c.font = `600 ${Math.min(H * 0.17, W * 0.07)}px ${SERIF}`; c.fillText(title, W * 0.06, H * 0.24);
+    c.fillStyle = '#e8dfc8'; c.font = `500 ${Math.min(H * 0.09, W * 0.04)}px ${SANS}`;
+    let yy = H * 0.42; for (const l of lines) yy = wrap(c, l, W * 0.06, yy, W * 0.88, Math.min(H * 0.11, W * 0.048), 3) + H * 0.02;
+  }, { px: 1600 });
+  m.position.set(x, y, z); m.rotation.x = tiltX; parent.add(m); return m;
+}
+let holoScan;
+function buildStations() {
+  for (const st of STATIONS) {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.26, 0.31, 48), decal(glowMat(GOLD_HI, 0.95)));
+    ring.rotation.x = -PI / 2; ring.position.set(st.pos[0], 0.004, st.pos[2]); scene.add(ring);
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(0.34, 32), decal(glowMat(GOLD, 0.12)));
+    disc.rotation.x = -PI / 2; disc.position.set(st.pos[0], 0.003, st.pos[2]); scene.add(disc);
+    register(disc, 'ring', disc, { station: st, ring });
+    if (st.id !== 'desk') { const s = sprite(st.name); s.position.set(st.pos[0], 2.35, st.pos[2]); scene.add(s); }
+  }
+  // Laser bench
+  {
+    const g = stationGroup(STATIONS[1]);
+    box(1.5, 0.05, 0.75, MAT.bench, 0, 0.9, -1.25, g);
+    box(1.52, 0.01, 0.77, MAT.gold, 0, 0.87, -1.25, g);
+    for (const [x, z] of [[-0.7, -0.92], [0.7, -0.92], [-0.7, -1.58], [0.7, -1.58]]) box(0.05, 0.86, 0.05, MAT.leather, x, 0.43, z, g);
+    const sheet = labelPlane(0.432, 0.406, (c, w, h) => {
+      c.fillStyle = '#c99b63'; c.fillRect(0, 0, w, h);
+      for (let i = 0; i < 70; i++) { c.strokeStyle = `rgba(110,70,30,${0.08 + (i % 5) * 0.03})`; c.lineWidth = 1 + (i % 3); c.beginPath(); const y = (i / 70) * h; c.moveTo(0, y); c.bezierCurveTo(w * 0.3, y + 6, w * 0.6, y - 6, w, y + 3); c.stroke(); }
+      c.strokeStyle = '#d0342c'; c.lineWidth = 4; rr(c, w * 0.12, h * 0.15, w * 0.76, h * 0.62, 40); c.stroke();
+      c.fillStyle = 'rgba(40,24,10,0.85)'; c.textAlign = 'center'; c.font = `700 ${h * 0.11}px ${SERIF}`; c.fillText('SAMPLE', w / 2, h * 0.5);
+      c.font = `600 ${h * 0.045}px ${SANS}`; c.fillText('red = cut · dark = engrave', w / 2, h * 0.88);
+    }, { px: 2400, transparent: false });
+    decal(sheet.material); sheet.rotation.x = -PI / 2; sheet.position.set(0, 0.926, -1.2); g.add(sheet);
+    infoCard(g, 0.9, 0.36, 'Laser Bench', ['Real-size preview of your vector files comes next.', 'Sheet shown at about 432 × 406 mm, the xTool D1 Pro work area.'], 0, 1.45, -1.55, -0.15);
+  }
+  // Book stand (pages now face you)
+  {
+    const g = stationGroup(STATIONS[2]);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 1.0, 16), MAT.gold); post.position.set(0, 0.5, -0.95); g.add(post);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.24, 0.03, 32), MAT.leather); base.position.set(0, 0.015, -0.95); g.add(base);
+    const top = new THREE.Group(); top.position.set(0, 1.04, -0.95); top.rotation.x = 0.55; g.add(top);
+    box(0.56, 0.02, 0.38, MAT.leather, 0, 0, 0, top);
+    box(0.57, 0.006, 0.012, MAT.gold, 0, 0.013, 0.19, top);
+    const page = (left) => labelPlane(0.24, 0.32, (c, w, h) => {
+      c.fillStyle = '#fbf8f1'; c.fillRect(0, 0, w, h); c.fillStyle = '#16120a'; c.textAlign = 'center';
+      if (left) { c.font = `700 ${h * 0.07}px ${SERIF}`; c.fillText('Funny Bones Kids', w / 2, h * 0.3); c.font = `500 ${h * 0.045}px ${SANS}`; c.fillText('Book stand preview', w / 2, h * 0.4); }
+      else { c.strokeStyle = '#16120a'; c.lineWidth = 3; c.beginPath(); c.arc(w / 2, h * 0.42, w * 0.25, 0, PI * 2); c.stroke(); c.font = `500 ${h * 0.04}px ${SANS}`; c.fillText('Your pages appear here next', w / 2, h * 0.86); }
+    }, { px: 2200, transparent: false });
+    const Lp = page(true), Rp = page(false);
+    for (const [pg, x, ry] of [[Lp, -0.125, 0.04], [Rp, 0.125, -0.04]]) { decal(pg.material); pg.rotation.set(-PI / 2, ry, 0); pg.position.set(x, 0.012, 0); top.add(pg); }
+    infoCard(g, 0.8, 0.3, 'Book Stand', ['Flip pages, pull one out and drop it in Completed or Revised (coming next).'], 0, 1.62, -1.3, -0.1);
+  }
+  // Apparel corner
+  {
+    const g = stationGroup(STATIONS[3]);
+    const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.34, 0.12, 40), MAT.leather); ped.position.set(0, 0.06, -1.4); g.add(ped);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.335, 0.008, 6, 48), MAT.gold); rim.rotation.x = PI / 2; rim.position.set(0, 0.12, -1.4); g.add(rim);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.85, 12), MAT.gold); pole.position.set(0, 0.55, -1.4); g.add(pole);
+    const pts = [[0.0, 0], [0.14, 0], [0.155, 0.1], [0.145, 0.25], [0.165, 0.4], [0.2, 0.5], [0.19, 0.56], [0.085, 0.61], [0.05, 0.66], [0.0, 0.68]].map(([r, y]) => new THREE.Vector2(r, y));
+    const form = new THREE.Mesh(new THREE.LatheGeometry(pts, 32), MAT.form); form.scale.set(1, 1, 0.62); form.position.set(0, 0.97, -1.4); g.add(form);
+    infoCard(g, 0.8, 0.3, 'Apparel Corner', ['Design binder, Fourthwall colour swatches and a real shirt are next. Send Claude a couple of design files.'], 0.75, 1.5, -1.3, 0);
+  }
+  // Brainstorm wall
+  {
+    const g = stationGroup(STATIONS[4]);
+    board = new THREE.Group(); board.position.set(0, 1.55, -1.9); g.add(board);
+    boardPanel = labelPlane(3.3, 1.95, (c, w, h) => {
+      c.fillStyle = '#faf6ee'; c.fillRect(0, 0, w, h);
+      c.textAlign = 'left'; c.fillStyle = '#9c7a2c'; c.font = `600 ${h * 0.07}px ${SERIF}`; c.fillText('BRAINSTORM', w * 0.03, h * 0.1);
+      c.fillStyle = '#7a7264'; c.font = `500 ${h * 0.03}px ${SANS}`; c.fillText('apps · products · books · anything we come up with', w * 0.33, h * 0.095);
+      ['APP IDEAS', 'PRODUCT IDEAS', 'BOOK IDEAS', 'QUESTIONS'].forEach((t, i) => {
+        const x = w * (0.03 + i * 0.245); c.fillStyle = '#c9a24a'; c.fillRect(x, h * 0.14, w * 0.225, 3);
+        c.fillStyle = '#2b251c'; c.font = `600 ${h * 0.032}px ${SANS}`; c.fillText(t, x, h * 0.19);
+      });
+    }, { px: 600, transparent: false });
+    board.add(boardPanel); addTarget(boardPanel, 'board', null);
+    box(3.34, 0.02, 0.03, MAT.gold, 0, 0.985, 0, board); box(3.34, 0.02, 0.03, MAT.gold, 0, -0.985, 0, board);
+    box(0.02, 1.99, 0.03, MAT.gold, -1.66, 0, 0, board); box(0.02, 1.99, 0.03, MAT.gold, 1.66, 0, 0, board);
+    [['Sample note — grab me and move me', -1.25, 0.45], ['Laser pilot · 12 products (awaiting approval)', -0.45, 0.45], ['Book two · kid-friendly rewrite', 0.35, 0.45], ['Use + New note to add ideas', 1.15, 0.45]]
+      .forEach(([t, x, y]) => addNote(t, x, y));
+    const add = makeButton(0.34, 0.1, '+ New note', () => { noteCount++; addNote(`Idea ${noteCount}`, -1.3 + ((noteCount * 0.34) % 2.6), -0.6, 'Voice text comes with the live connection'); }, { parent: board });
+    add.position.set(1.4, -0.86, 0.02);
+  }
+  // Sales & pipeline wall, behind the directors (in front of you at the desk)
+  {
+    const g = stationGroup(STATIONS[5]);
+    const score = infoCard(g, 2.3, 1.0, 'Fourthwall sales', ['Not connected in this preview.', 'When it connects, every number shows a LIVE badge and the time it was pulled — never made-up figures.'], 0, 2.15, -2.26);
+    const scanTex = canvasTex(64, 256, (c, w, h) => { for (let y = 0; y < h; y += 8) { c.fillStyle = `rgba(240,212,138,${y % 32 === 0 ? 0.35 : 0.08})`; c.fillRect(0, y, w, 2); } });
+    scanTex.wrapS = scanTex.wrapT = THREE.RepeatWrapping; scanTex.repeat.set(1, 3);
+    holoScan = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 1.0), new THREE.MeshBasicMaterial({ map: scanTex, transparent: true, opacity: 0.35, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending }));
+    holoScan.position.set(0, 2.15, -2.255); g.add(holoScan);
+    const pipe = labelPlane(1.7, 0.7, (c, w, h) => {
+      panelBg(c, w, h, { radius: 0.05 });
+      c.textAlign = 'left'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.11}px ${SERIF}`; c.fillText('Pipeline', w * 0.04, h * 0.17);
+      ['Idea', 'Draft', 'Revised', 'Approved'].forEach((t, i) => {
+        const x = w * (0.04 + i * 0.24); c.fillStyle = '#1b1b1f'; rr(c, x, h * 0.28, w * 0.21, h * 0.5, 14); c.fill();
+        c.strokeStyle = '#c9a24a'; c.lineWidth = 2; c.stroke(); c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.075}px ${SANS}`; c.fillText(t, x + w * 0.015, h * 0.38);
+        c.fillStyle = '#8f887a'; c.font = `500 ${h * 0.055}px ${SANS}`; c.fillText('—', x + w * 0.015, h * 0.5);
+      });
+      c.fillStyle = '#a59f92'; c.font = `500 ${h * 0.055}px ${SANS}`; c.fillText('Live counts from Business HQ come with the live connection.', w * 0.04, h * 0.9);
+    }, { px: 1100 });
+    pipe.position.set(-2.7, 1.75, -2.26); g.add(pipe);
+    for (const y of [1.25, 1.85]) { box(1.6, 0.03, 0.25, MAT.leather, 2.7, y, -2.16, g); box(1.6, 0.008, 0.252, MAT.gold, 2.7, y + 0.02, -2.16, g); }
+    for (let i = 0; i < 3; i++) { const pl = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.06, 20), MAT.gold); pl.position.set(2.25 + i * 0.45, 1.3, -2.16); g.add(pl); }
+    infoCard(g, 1.5, 0.32, 'Trophy shelf', ['Approved work gets displayed here.'], 2.7, 2.3, -2.26);
+  }
+}
+
+// ================= teleport =================
 let currentStation = STATIONS[0], lookYaw = 0, lookPitch = STATIONS[0].pitch;
 function teleport(st) {
   currentStation = st;
-  rig.position.set(st.pos[0], 0, st.pos[2]);
-  rig.rotation.y = st.yaw;
-  if (!renderer.xr.isPresenting) {
-    camera.position.set(0, st.eye, st.id === 'desk' ? 0.12 : 0);
-    lookYaw = 0; lookPitch = st.pitch;
-    camera.rotation.set(lookPitch, lookYaw, 0);
-  }
+  rig.position.set(st.pos[0], renderer.xr.isPresenting ? seatOffset : 0, st.pos[2]); rig.rotation.y = st.yaw;
+  if (!renderer.xr.isPresenting) { camera.position.set(0, st.eye, st.id === 'desk' ? 0.1 : 0); lookYaw = 0; lookPitch = st.pitch; camera.rotation.set(lookPitch, lookYaw, 0); }
   document.querySelectorAll('#stationRow button[data-st]').forEach((b) => b.classList.toggle('on', b.dataset.st === st.id));
   $('#ideaRow').hidden = st.id !== 'brainstorm';
 }
 
-// ---------- VR controllers + hands ----------
+// ================= VR input: grab, push/pull, toss, glide, resize, crumple =================
 const raycaster = new THREE.Raycaster();
 const tmpMat = new THREE.Matrix4();
 const controllers = [];
+let twoHand = null, resize = null;
+const targetGlow = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.012, 8, 48), glowMat(GOLD_HI, 0.9));
+targetGlow.visible = false; scene.add(targetGlow);
 function setupXRInput() {
-  const cmf = new XRControllerModelFactory();
-  const hmf = new XRHandModelFactory();
+  const cmf = new XRControllerModelFactory(), hmf = new XRHandModelFactory();
   for (let i = 0; i < 2; i++) {
     const c = renderer.xr.getController(i);
     const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]),
-      new THREE.LineBasicMaterial({ color: GOLD_HI, transparent: true, opacity: 0.75, toneMapped: false }));
+      new THREE.LineBasicMaterial({ color: GOLD_HI, transparent: true, opacity: 0.9, toneMapped: false }));
     line.scale.z = 3; c.add(line);
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.009, 12, 8), glowMat(GOLD_HI, 1)); dot.visible = false; scene.add(dot);
-    c.userData = { line, dot, held: null, hover: null, pull: 0 };
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.01, 12, 8), glowMat(GOLD_HI, 1)); dot.visible = false; scene.add(dot);
+    c.userData = { line, dot, held: null, src: null, index: i, trail: [], aim: null };
+    c.addEventListener('connected', (e) => { c.userData.src = e.data; });
+    c.addEventListener('disconnected', () => { c.userData.src = null; release(c); });
     c.addEventListener('selectstart', onSelectStart);
     c.addEventListener('selectend', onSelectEnd);
+    c.addEventListener('squeezestart', () => { const o = c.userData.held; if (o) setCrumpled(o, true); });
     rig.add(c);
-    const grip = renderer.xr.getControllerGrip(i);
-    grip.add(cmf.createControllerModel(grip)); rig.add(grip);
-    const hand = renderer.xr.getHand(i);
-    hand.add(hmf.createHandModel(hand, 'spheres')); rig.add(hand);
+    const grip = renderer.xr.getControllerGrip(i); grip.add(cmf.createControllerModel(grip)); rig.add(grip);
+    const hand = renderer.xr.getHand(i); hand.add(hmf.createHandModel(hand, 'mesh')); rig.add(hand);
+    c.userData.hand = hand;
     controllers.push(c);
   }
 }
-function pickFromController(c) {
+function aimRay(c) {
   tmpMat.identity().extractRotation(c.matrixWorld);
   raycaster.ray.origin.setFromMatrixPosition(c.matrixWorld);
   raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tmpMat);
-  raycaster.far = 12;
-  return firstHit(raycaster.intersectObjects(hitables, false));
+  raycaster.far = 14;
 }
 function firstHit(list) {
   for (const h of list) {
-    const o = h.object;
-    if (!isShown(o)) continue;
-    const owner = o.userData.owner;
-    if (owner && owner.userData.heldBy) continue;
+    const o = h.object; if (!isShown(o)) continue;
+    const owner = o.userData.owner; if (owner && owner.userData && owner.userData.heldBy) continue;
     return h;
   }
   return null;
 }
-function setGlow(obj, on) { if (obj && obj.userData.frame) obj.userData.frame.visible = on; }
-function grab(obj, c) {
-  if (obj.userData.heldBy && obj.userData.heldBy !== c) release(obj.userData.heldBy);
+function pickFromController(c) { aimRay(c); return firstHit(raycaster.intersectObjects(hitables, false)); }
+function aimTarget(c) { aimRay(c); const h = raycaster.intersectObjects(targets, false)[0]; return h ? { ...h.object.userData.target, point: h.point, obj: h.object } : null; }
+const isHand = (c) => !!(c.userData.src && c.userData.src.hand);
+const headPos = () => camera.getWorldPosition(V());
+function setGlow(obj, on) { if (obj && obj.userData.frame && !obj.userData.crumpled) { obj.userData.frame.visible = on; obj.userData.handles.visible = on; } }
+function grab(obj, c, hitDist) {
+  const u = obj.userData;
+  if (u.heldBy && u.heldBy !== c) {               // second hand on the same sheet = two-hand resize
+    twoHand = { obj, a: u.heldBy, b: c, d0: u.heldBy.getWorldPosition(V()).distanceTo(c.getWorldPosition(V())), s0: obj.scale.x };
+    return;
+  }
+  u.fly = u.glide = null; clearState(obj);
   c.attach(obj);
-  obj.userData.heldBy = c; c.userData.held = obj; c.userData.pull = 0;
-  obj.userData.pullFrom = { p: obj.position.clone(), q: obj.quaternion.clone() };
+  u.heldBy = c; c.userData.held = obj; c.userData.trail = []; c.userData.aim = null;
+  const lp = obj.position.clone();
+  c.userData.grab = { ox: lp.x, oy: lp.y, d: Math.max(0.12, -lp.z), handHead0: c.getWorldPosition(V()).distanceTo(headPos()), d0: Math.max(0.12, -lp.z) };
+  // if it was lying flat, stand it up gently to face you
+  const n = new THREE.Vector3(0, 0, 1).applyQuaternion(obj.getWorldQuaternion(new THREE.Quaternion()));
+  if (Math.abs(n.y) > 0.7 && !u.crumpled) {
+    const look = new THREE.Object3D(); look.position.copy(obj.getWorldPosition(V())); look.lookAt(headPos());
+    const want = c.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(look.quaternion);
+    u.turn = { from: obj.quaternion.clone(), to: want, t: 0 };
+  } else u.turn = null;
   setGlow(obj, true); hideToast();
 }
-const HOLD_P = new THREE.Vector3(0, 0.01, -0.2);
-const HOLD_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.35, 0, 0));
 function release(c) {
+  if (twoHand && (twoHand.b === c)) { twoHand = null; return; }
+  if (twoHand && twoHand.a === c) twoHand = null;
+  if (resize && resize.c === c) { resize = null; return; }
   const obj = c.userData.held; if (!obj) return;
-  scene.attach(obj);
-  obj.userData.heldBy = null; c.userData.held = null;
-  setGlow(obj, false);
-  place(obj);
+  const tgt = c.userData.aim;
+  const vel = trailVelocity(c);
+  scene.attach(obj); obj.userData.heldBy = null; c.userData.held = null; setGlow(obj, false); obj.userData.turn = null;
+  targetGlow.visible = false;
+  if (tgt) return glideTo(obj, tgt.kind, tgt.ref, tgt.point);
+  place(obj, vel);
 }
-function activate(hit) {
+function trailVelocity(c) {
+  const tr = c.userData.trail; if (tr.length < 2) return V();
+  const a = tr[0], b = tr[tr.length - 1], dt = (b.t - a.t) / 1000;
+  return dt > 0.005 ? b.p.clone().sub(a.p).divideScalar(dt) : V();
+}
+function activate(hit, c) {
   const o = hit.object, kind = o.userData.kind;
   if (kind === 'button') { o.userData.onPress(); return null; }
   if (kind === 'ring') { teleport(o.userData.station); return null; }
+  if (kind === 'handle' && c) {
+    const obj = o.userData.owner;
+    resize = { c, obj, dist: hit.distance, center: obj.getWorldPosition(V()), r0: Math.max(0.02, hit.point.distanceTo(obj.getWorldPosition(V()))), s0: obj.scale.x };
+    return null;
+  }
   return o.userData.owner;
 }
 function onSelectStart(e) {
-  const c = e.target;
-  const hit = pickFromController(c); if (!hit) return;
-  const owner = activate(hit);
-  if (owner) grab(owner, c);
+  const c = e.target, hit = pickFromController(c);
+  // allow grabbing a sheet already held by the other hand (two-hand resize)
+  if (!hit) {
+    aimRay(c);
+    const any = raycaster.intersectObjects(hitables, false).find((h) => h.object.userData.owner && h.object.userData.owner.userData && h.object.userData.owner.userData.heldBy);
+    if (any) grab(any.object.userData.owner, c, any.distance);
+    return;
+  }
+  const owner = activate(hit, c);
+  if (owner) grab(owner, c, hit.distance);
 }
 function onSelectEnd(e) { release(e.target); }
 
-// snap turn on either thumbstick
 let snapCooldown = 0;
 function snapTurn(a) {
-  const before = camera.getWorldPosition(V());
-  rig.rotation.y += a; rig.updateMatrixWorld(true);
-  const after = camera.getWorldPosition(V());
-  rig.position.x += before.x - after.x; rig.position.z += before.z - after.z;
+  const before = camera.getWorldPosition(V()); rig.rotation.y += a; rig.updateMatrixWorld(true);
+  const after = camera.getWorldPosition(V()); rig.position.x += before.x - after.x; rig.position.z += before.z - after.z;
 }
-function pollThumbsticks(dt) {
+function stickOf(c) { const gp = c.userData.src && c.userData.src.gamepad; if (!gp || !gp.axes) return [0, 0]; return gp.axes.length >= 4 ? [gp.axes[2], gp.axes[3]] : [gp.axes[0], gp.axes[1]]; }
+function fistClosed(c) {
+  const j = c.userData.hand && c.userData.hand.joints; if (!j || !j.wrist) return false;
+  const w = j.wrist.getWorldPosition(V());
+  let sum = 0, n = 0;
+  for (const name of ['middle-finger-tip', 'ring-finger-tip', 'pinky-finger-tip']) { if (!j[name]) return false; sum += j[name].getWorldPosition(V()).distanceTo(w); n++; }
+  return n === 3 && sum / n < 0.1;
+}
+function updateXR(dt) {
   snapCooldown = Math.max(0, snapCooldown - dt);
-  const s = renderer.xr.getSession(); if (!s || snapCooldown > 0) return;
-  for (const src of s.inputSources) {
-    const gp = src.gamepad; if (!gp || !gp.axes) continue;
-    const x = gp.axes.length >= 4 ? gp.axes[2] : gp.axes[0];
-    if (Math.abs(x) > 0.7) { snapTurn(x > 0 ? -PI / 6 : PI / 6); snapCooldown = 0.35; return; }
+  const newHover = new Set();
+  for (const c of controllers) {
+    const u = c.userData, held = u.held;
+    const [sx, sy] = stickOf(c);
+    if (held) {
+      const g = u.grab, hd = held.userData;
+      // push / pull: thumbstick, or for bare hands, moving your hand toward/away from you (amplified)
+      if (isHand(c)) g.d = clamp(g.d0 + (c.getWorldPosition(V()).distanceTo(headPos()) - g.handHead0) * 3.0, 0.12, 6);
+      else if (Math.abs(sy) > 0.15) g.d = clamp(g.d - sy * 1.6 * dt, 0.12, 6);
+      held.position.set(g.ox, g.oy, -g.d);
+      if (hd.turn) { hd.turn.t = Math.min(1, hd.turn.t + dt / 0.25); held.quaternion.slerpQuaternions(hd.turn.from, hd.turn.to, hd.turn.t); if (hd.turn.t >= 1) hd.turn = null; }
+      if (isHand(c) && !hd.crumpled && fistClosed(c)) setCrumpled(held, true);
+      const now = performance.now(); u.trail.push({ p: held.getWorldPosition(V()), t: now }); while (u.trail.length && now - u.trail[0].t > 100) u.trail.shift();
+      // what are you pointing at? (director, box, trash, board)
+      const tg = aimTarget(c);
+      u.aim = tg && !(tg.kind === 'board' && held.userData.kind !== 'note') ? tg : null;
+      if (u.aim) {
+        const p = u.aim.kind === 'board' ? u.aim.point : u.aim.obj.getWorldPosition(V());
+        targetGlow.position.copy(p); targetGlow.visible = true; targetGlow.lookAt(headPos());
+        targetGlow.scale.setScalar(u.aim.kind === 'director' ? 1.3 : u.aim.kind === 'board' ? 0.5 : 0.9);
+      } else targetGlow.visible = false;
+      u.line.scale.z = g.d; u.dot.visible = false;
+      continue;
+    }
+    if (Math.abs(sx) > 0.7 && snapCooldown === 0) { snapTurn(sx > 0 ? -PI / 6 : PI / 6); snapCooldown = 0.35; }
+    if (resize && resize.c === c) {
+      aimRay(c); const p = raycaster.ray.at(resize.dist, V());
+      resize.obj.scale.setScalar(clamp(resize.s0 * p.distanceTo(resize.center) / resize.r0, 0.4, 5));
+      u.line.scale.z = resize.dist; continue;
+    }
+    const hit = c.visible ? pickFromController(c) : null;
+    if (hit) { u.line.scale.z = hit.distance; u.dot.position.copy(hit.point); u.dot.visible = true; newHover.add(hit.object); }
+    else { u.line.scale.z = 3; u.dot.visible = false; }
   }
+  if (twoHand) {
+    const d = twoHand.a.getWorldPosition(V()).distanceTo(twoHand.b.getWorldPosition(V()));
+    twoHand.obj.scale.setScalar(clamp(twoHand.s0 * d / Math.max(0.05, twoHand.d0), 0.4, 5));
+  }
+  if (!controllers.some((c) => c.userData.held)) targetGlow.visible = false;
+  return newHover;
 }
 
-// ---------- phone / desktop input ----------
+// ================= phone / desktop input =================
 const ndc = new THREE.Vector2();
 let drag = null;
 function pointerHit(e) {
@@ -975,158 +1189,72 @@ canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
   const hit = pointerHit(e);
   drag = { x: e.clientX, y: e.clientY, moved: 0, hit, obj: null, plane: null };
-  if (hit && (hit.object.userData.kind === 'doc' || hit.object.userData.kind === 'note')) {
-    const obj = hit.object.userData.owner;
+  const k = hit && hit.object.userData.kind;
+  if (k === 'doc' || k === 'note') {
+    const obj = hit.object.userData.owner; obj.userData.fly = obj.userData.glide = null; clearState(obj);
     drag.obj = obj; setGlow(obj, true); hideToast();
     const wp = obj.getWorldPosition(V());
-    if (obj.userData.kind === 'note') {
+    if (obj.userData.kind === 'note' && obj.parent === board) {
       const n = new THREE.Vector3(0, 0, 1).applyQuaternion(board.getWorldQuaternion(new THREE.Quaternion()));
       drag.plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n, board.getWorldPosition(V()).add(n.clone().multiplyScalar(0.03)));
-    } else if (overTable(wp) || wp.y < TABLE.y + 0.3) {
-      drag.plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(TABLE.y + 0.06));
-      scene.attach(obj); obj.rotation.set(-PI / 2, 0, 0);
-    } else {
-      const n = camera.getWorldDirection(V()).negate();
-      drag.plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n, wp);
-    }
+    } else if (wp.y < 1.0) {
+      drag.plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(DESK.y + 0.06)); scene.attach(obj); if (!obj.userData.crumpled) obj.rotation.set(-PI / 2, 0, 0);
+    } else drag.plane = new THREE.Plane().setFromNormalAndCoplanarPoint(camera.getWorldDirection(V()).negate(), wp);
   }
 });
 canvas.addEventListener('pointermove', (e) => {
   if (renderer.xr.isPresenting) return;
-  if (!drag) { const h = pointerHit(e); canvas.style.cursor = h ? 'pointer' : 'grab'; return; }
-  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-  drag.moved += Math.abs(dx) + Math.abs(dy);
-  drag.x = e.clientX; drag.y = e.clientY;
+  if (!drag) { canvas.style.cursor = pointerHit(e) ? 'pointer' : 'grab'; return; }
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.moved += Math.abs(dx) + Math.abs(dy); drag.x = e.clientX; drag.y = e.clientY;
   if (drag.obj) {
     const r = canvas.getBoundingClientRect();
     ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
-    const p = raycaster.ray.intersectPlane(drag.plane, V());
-    if (p) setWorldPos(drag.obj, p);
-  } else {
-    lookYaw -= dx * 0.005; lookPitch = THREE.MathUtils.clamp(lookPitch - dy * 0.004, -1.2, 1.0);
-    camera.rotation.set(lookPitch, lookYaw, 0);
-  }
+    const p = raycaster.ray.intersectPlane(drag.plane, V()); if (p) setWorldPos(drag.obj, p);
+  } else { lookYaw -= dx * 0.005; lookPitch = clamp(lookPitch - dy * 0.004, -1.2, 1.0); camera.rotation.set(lookPitch, lookYaw, 0); }
 });
 function endPointer() {
-  if (!drag) return;
-  const d = drag; drag = null;
+  if (!drag) return; const d = drag; drag = null;
   if (d.obj) { setGlow(d.obj, false); place(d.obj); return; }
-  if (d.moved < 8 && d.hit) activate(d.hit);
+  if (d.moved < 8 && d.hit) activate(d.hit, null);
 }
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
 
-// ---------- HTML dock ----------
+// ================= HTML dock =================
 function buildDock() {
   const sr = $('#stationRow');
-  for (const st of STATIONS) {
-    const b = document.createElement('button'); b.textContent = st.name; b.dataset.st = st.id;
-    b.addEventListener('click', () => teleport(st)); sr.appendChild(b);
-  }
+  for (const st of STATIONS) { const b = document.createElement('button'); b.textContent = st.name; b.dataset.st = st.id; b.addEventListener('click', () => teleport(st)); sr.appendChild(b); }
   const sp = $('#speakRow');
   for (const [label, name] of [['Ava', 'Ava'], ['Claude', 'Claude'], ['Bob', 'Bob'], ['Quiet', '']]) {
-    const b = document.createElement('button'); b.textContent = label; b.dataset.sp = name;
-    b.addEventListener('click', () => setSpeaker(name)); sp.appendChild(b);
+    const b = document.createElement('button'); b.textContent = label; b.dataset.sp = name; b.addEventListener('click', () => setSpeaker(name)); sp.appendChild(b);
   }
-  const addIdea = () => {
-    const v = $('#ideaIn').value.trim(); if (!v) return;
-    noteCount++; addNote(v, -1.3 + ((noteCount * 0.34) % 2.6), -0.55);
-    $('#ideaIn').value = '';
-  };
+  document.querySelectorAll('#seatRow button').forEach((b) => b.addEventListener('click', () => setSeat(b.dataset.seat)));
+  const addIdea = () => { const v = $('#ideaIn').value.trim(); if (!v) return; noteCount++; addNote(v, -1.3 + ((noteCount * 0.34) % 2.6), -0.55); $('#ideaIn').value = ''; };
   $('#ideaAdd').addEventListener('click', addIdea);
   $('#ideaIn').addEventListener('keydown', (e) => { if (e.key === 'Enter') addIdea(); });
 }
 async function setupVRButton() {
   const b = $('#enterVR');
   if (!('xr' in navigator)) { b.textContent = 'VR: open on Quest'; return; }
-  let ok = false;
-  try { ok = await navigator.xr.isSessionSupported('immersive-vr'); } catch (e) { ok = false; }
+  let ok = false; try { ok = await navigator.xr.isSessionSupported('immersive-vr'); } catch (e) {}
   if (!ok) { b.textContent = 'VR: open on Quest'; return; }
   b.disabled = false; b.textContent = 'Enter VR';
   b.addEventListener('click', async () => {
     if (renderer.xr.isPresenting) { renderer.xr.getSession().end(); return; }
-    try {
-      const s = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'] });
-      await renderer.xr.setSession(s);
-    } catch (e) { showToast('Could not start VR', String(e && e.message || e)); }
+    try { const s = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'] }); await renderer.xr.setSession(s); }
+    catch (e) { showToast('Could not start VR', String(e && e.message || e), false); }
   });
 }
 renderer.xr.addEventListener('sessionstart', () => {
   camera.position.set(0, 0, 0); camera.rotation.set(0, 0, 0);
-  rig.position.set(currentStation.pos[0], 0, currentStation.pos[2]); rig.rotation.y = currentStation.yaw;
+  rig.position.set(currentStation.pos[0], seatOffset, currentStation.pos[2]); rig.rotation.y = currentStation.yaw;
   $('#enterVR').textContent = 'Exit VR';
 });
-renderer.xr.addEventListener('sessionend', () => {
-  controllers.forEach((c) => release(c));
-  teleport(currentStation);
-  $('#enterVR').textContent = 'Enter VR';
-});
-addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
+renderer.xr.addEventListener('sessionend', () => { controllers.forEach((c) => release(c)); teleport(currentStation); $('#enterVR').textContent = 'Enter VR'; });
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 
-// ---------- frame loop ----------
-const clock = new THREE.Clock();
-let hovered = new Set();
-function frame() {
-  const dt = Math.min(0.05, clock.getDelta());
-  const t = clock.elapsedTime;
-  const presenting = renderer.xr.isPresenting;
-
-  const newHover = new Set();
-  if (presenting) {
-    pollThumbsticks(dt);
-    for (const c of controllers) {
-      const u = c.userData;
-      if (u.held) {
-        u.pull = Math.min(1, u.pull + dt / 0.18);
-        const k = u.pull * u.pull * (3 - 2 * u.pull);
-        u.held.position.lerpVectors(u.held.userData.pullFrom.p, HOLD_P, k);
-        u.held.quaternion.slerpQuaternions(u.held.userData.pullFrom.q, HOLD_Q, k);
-        u.line.scale.z = 0.2; u.dot.visible = false; continue;
-      }
-      const hit = c.visible ? pickFromController(c) : null;
-      if (hit) {
-        u.line.scale.z = hit.distance; u.dot.position.copy(hit.point); u.dot.visible = true;
-        newHover.add(hit.object);
-      } else { u.line.scale.z = 3; u.dot.visible = false; }
-    }
-  }
-  for (const o of hovered) if (!newHover.has(o)) {
-    const k = o.userData.kind;
-    if (k === 'button') o.scale.setScalar(1);
-    if (k === 'ring') o.userData.ring.scale.setScalar(1);
-    if (k === 'doc' || k === 'note') setGlow(o.userData.owner, !!o.userData.owner.userData.heldBy);
-  }
-  for (const o of newHover) {
-    const k = o.userData.kind;
-    if (k === 'button') o.scale.setScalar(1.08);
-    if (k === 'ring') o.userData.ring.scale.setScalar(1.15);
-    if (k === 'doc' || k === 'note') setGlow(o.userData.owner, true);
-  }
-  hovered = newHover;
-
-  const holding = presenting && controllers.some((c) => c.userData.held);
-  const fm = focusShell.material;
-  fm.opacity = lerp(fm.opacity, holding ? 0.5 : 0, Math.min(1, dt * 6));
-  focusShell.visible = fm.opacity > 0.01;
-
-  for (const tr of trays) {
-    tr.flash = Math.max(0, tr.flash - dt);
-    tr.glow.material.opacity = 0.12 + 0.6 * Math.min(1, tr.flash);
-  }
-  if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) hideToast(); }
-  toast3d.visible = presenting && toastTimer > 0;
-  animateDirectors(t, dt);
-  renderer.render(scene, camera);
-  if (!window.__officeReady) { window.__officeReady = true; const b = $('#boot'); if (b) b.remove(); }
-}
-
-// ---------- headset sign-in with a phone code ----------
-// The headset never sees a password. It asks for a short code, you approve that code on your
-// signed-in phone (Hq/pair), and the headset receives its own Business HQ sign-in.
+// ================= headset sign-in with a phone code =================
 const PAIR_FN = 'https://whvgwshdppluudzkhcqp.supabase.co/functions/v1/hq-device-pair';
 const PAIR_PAGE = 'workingbonesoutfitters.github.io/Hq/pair';
 const store = {
@@ -1136,59 +1264,39 @@ const store = {
 };
 const session = () => { try { return JSON.parse(store.get('hq_sess')); } catch (e) { return null; } };
 let pairing = null, pairTimer = null;
-const pairPanel = labelPlane(0.7, 0.34, (c, w, h) => drawPair3d(c, w, h), { px: 1600 });
-pairPanel.position.set(0, 1.5, -1.25); pairPanel.visible = false; scene.add(pairPanel);
 function drawPair3d(c, w, h) {
   panelBg(c, w, h, { radius: 0.06 });
-  c.textAlign = 'center'; c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.08}px ${SANS}`;
-  c.fillText('Sign this headset in — on your phone open', w / 2, h * 0.17);
+  c.textAlign = 'center'; c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.08}px ${SANS}`; c.fillText('Sign this headset in — on your phone open', w / 2, h * 0.17);
   c.fillStyle = '#f0e6cc'; c.font = `600 ${h * 0.075}px ${SANS}`; c.fillText(PAIR_PAGE, w / 2, h * 0.3);
-  c.fillStyle = '#e6c878'; c.font = `700 ${h * 0.25}px ui-monospace, Menlo, monospace`;
-  c.fillText(pairing ? pairing.code : '', w / 2, h * 0.66);
+  c.fillStyle = '#e6c878'; c.font = `700 ${h * 0.25}px ui-monospace, Menlo, monospace`; c.fillText(pairing ? pairing.code : '', w / 2, h * 0.66);
   c.fillStyle = '#a59f92'; c.font = `500 ${h * 0.065}px ${SANS}`; c.fillText('Enter that code and tap Approve. It works once and expires in 3 minutes.', w / 2, h * 0.88);
 }
-function deviceLabel() {
-  const ua = navigator.userAgent || '';
-  if (/OculusBrowser|Quest/i.test(ua)) return 'Meta Quest browser';
-  if (/iPhone|iPad/i.test(ua)) return 'iPhone or iPad browser';
-  return 'Web browser';
-}
-function updateAuthBadge() {
-  const s = session(), b = $('#authBadge');
-  b.textContent = s ? '✓ Headset signed in' : 'Sign in with phone code';
-  b.classList.toggle('signed', !!s);
-}
+const pairPanel = labelPlane(0.7, 0.34, drawPair3d, { px: 1600 });
+pairPanel.position.set(0, 1.5, -1.25); pairPanel.visible = false; scene.add(pairPanel);
+function deviceLabel() { const ua = navigator.userAgent || ''; if (/OculusBrowser|Quest/i.test(ua)) return 'Meta Quest browser'; if (/iPhone|iPad/i.test(ua)) return 'iPhone or iPad browser'; return 'Web browser'; }
+function updateAuthBadge() { const s = session(), b = $('#authBadge'); b.textContent = s ? '✓ Headset signed in' : 'Sign in with phone code'; b.classList.toggle('signed', !!s); }
 function showPairBox(html) { $('#pairBody').innerHTML = html; $('#pairBox').hidden = false; }
 function closePairBox() { $('#pairBox').hidden = true; }
 function stopPairing() { pairing = null; clearTimeout(pairTimer); pairPanel.visible = false; }
-function pairCountdown() {
-  if (!pairing) return;
-  const left = Math.max(0, Math.round((pairing.until - Date.now()) / 1000));
-  const el = $('#pairLeft'); if (el) el.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
-}
+function pairCountdown() { if (!pairing) return; const left = Math.max(0, Math.round((pairing.until - Date.now()) / 1000)); const el = $('#pairLeft'); if (el) el.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`; }
 async function startPairing() {
-  stopPairing();
-  showPairBox('<h2>Getting a code…</h2>');
+  stopPairing(); showPairBox('<h2>Getting a code…</h2>');
   try {
     const r = await fetch(PAIR_FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', label: deviceLabel() }) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.code) throw new Error(j.error || 'Could not get a code');
     pairing = { code: j.code, secret: j.secret, until: Date.now() + (j.expires_in || 180) * 1000 };
   } catch (e) {
-    return showPairBox(`<h2>Couldn't get a code</h2><p>${String(e.message || e).replace(/[<>&]/g, '')}</p><div class="row"><button id="pairRetry">Try again</button><button id="pairClose">Close</button></div>`), wirePairButtons();
+    showPairBox(`<h2>Couldn't get a code</h2><p>${String(e.message || e).replace(/[<>&]/g, '')}</p><div class="row"><button id="pairRetry">Try again</button><button id="pairClose">Close</button></div>`);
+    return wirePairButtons();
   }
   repaint(pairPanel.userData.tex, drawPair3d); pairPanel.visible = true;
   showPairBox(`<h2>Sign this headset in</h2><p>On your phone, open</p><p class="url">${PAIR_PAGE}</p><p>and enter this code:</p><div class="code">${pairing.code}</div><p>Expires in <b id="pairLeft">3:00</b> · works once</p><div class="row"><button id="pairClose">Cancel</button></div>`);
   wirePairButtons(); pairCountdown(); pollPairing();
 }
 async function pollPairing() {
-  if (!pairing) return;
-  pairCountdown();
-  if (Date.now() > pairing.until) {
-    stopPairing();
-    showPairBox('<h2>Code expired</h2><p>No problem — get a fresh one.</p><div class="row"><button id="pairRetry">New code</button><button id="pairClose">Close</button></div>');
-    return wirePairButtons();
-  }
+  if (!pairing) return; pairCountdown();
+  if (Date.now() > pairing.until) { stopPairing(); showPairBox('<h2>Code expired</h2><p>No problem — get a fresh one.</p><div class="row"><button id="pairRetry">New code</button><button id="pairClose">Close</button></div>'); return wirePairButtons(); }
   const p = pairing;
   try {
     const r = await fetch(PAIR_FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'claim', code: p.code, secret: p.secret }) });
@@ -1200,45 +1308,79 @@ async function pollPairing() {
       store.set('hq_sess', JSON.stringify({ at: j.session.access_token, rt: j.session.refresh_token, em: 'Meta Quest headset (paired)' }));
       stopPairing(); updateAuthBadge();
       showPairBox('<h2>✓ Headset signed in</h2><p>This headset now has its own Business HQ sign-in. You can sign it out any time from here.</p><div class="row"><button id="pairClose">Done</button></div>');
-      wirePairButtons(); showToast('Headset signed in', 'Paired with your phone. No password was typed.');
-      return;
+      wirePairButtons(); showToast('Headset signed in', 'Paired with your phone. No password was typed.', false); return;
     }
-    if (j.status === 'expired') { pairing.until = 0; }
+    if (j.status === 'expired') pairing.until = 0;
   } catch (e) { /* keep trying until the code expires */ }
   pairTimer = setTimeout(pollPairing, 2500);
 }
 async function signOutHeadset() {
   const s = session(), U = store.get('hq_url'), K = store.get('hq_key');
-  if (s && U && K) {
-    try { await fetch(U + '/auth/v1/logout?scope=local', { method: 'POST', headers: { apikey: K, Authorization: 'Bearer ' + s.at } }); } catch (e) {}
-  }
+  if (s && U && K) { try { await fetch(U + '/auth/v1/logout?scope=local', { method: 'POST', headers: { apikey: K, Authorization: 'Bearer ' + s.at } }); } catch (e) {} }
   store.del('hq_sess'); updateAuthBadge();
-  showPairBox('<h2>Signed out</h2><p>This headset no longer has a Business HQ sign-in.</p><div class="row"><button id="pairClose">Close</button></div>');
-  wirePairButtons();
+  showPairBox('<h2>Signed out</h2><p>This headset no longer has a Business HQ sign-in.</p><div class="row"><button id="pairClose">Close</button></div>'); wirePairButtons();
 }
 function wirePairButtons() {
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
-  on('pairRetry', startPairing);
-  on('pairClose', () => { stopPairing(); closePairBox(); });
-  on('pairSignOut', signOutHeadset);
+  on('pairRetry', startPairing); on('pairClose', () => { stopPairing(); closePairBox(); }); on('pairSignOut', signOutHeadset);
 }
 $('#authBadge').addEventListener('click', () => {
-  if (session()) {
-    showPairBox('<h2>Headset signed in</h2><p>Signed in through a phone code.</p><div class="row"><button id="pairSignOut">Sign out this headset</button><button id="pairClose">Close</button></div>');
-    wirePairButtons();
-  } else startPairing();
+  if (session()) { showPairBox('<h2>Headset signed in</h2><p>Signed in through a phone code.</p><div class="row"><button id="pairSignOut">Sign out this headset</button><button id="pairClose">Close</button></div>'); wirePairButtons(); }
+  else startPairing();
 });
 setInterval(pairCountdown, 1000);
 
-// ---------- build ----------
+// ================= frame loop =================
+const clock = new THREE.Clock();
+let hovered = new Set();
+const sheets = () => [...docs, ...board.children.filter((o) => o.userData && o.userData.kind === 'note'), ...scene.children.filter((o) => o.userData && o.userData.kind === 'note')];
+function frame() {
+  const dt = Math.min(0.05, clock.getDelta()), t = clock.elapsedTime, presenting = renderer.xr.isPresenting;
+  const newHover = presenting ? updateXR(dt) : new Set();
+  for (const o of hovered) if (!newHover.has(o)) {
+    const k = o.userData.kind;
+    if (k === 'button') o.scale.setScalar(1);
+    if (k === 'ring') o.userData.ring.scale.setScalar(1);
+    if (k === 'doc' || k === 'note') setGlow(o.userData.owner, !!o.userData.owner.userData.heldBy);
+  }
+  for (const o of newHover) {
+    const k = o.userData.kind;
+    if (k === 'button') o.scale.setScalar(1.08);
+    if (k === 'ring') o.userData.ring.scale.setScalar(1.15);
+    if (k === 'doc' || k === 'note' || k === 'handle') setGlow(o.userData.owner, true);
+  }
+  hovered = newHover;
+
+  for (const obj of sheets()) {
+    const u = obj.userData;
+    if (u.glide) {
+      const g = u.glide; g.t = Math.min(1, g.t + dt / g.dur); const k = g.t * g.t * (3 - 2 * g.t);
+      obj.position.lerpVectors(g.from, g.to, k); obj.position.y += Math.sin(PI * k) * 0.25 * g.from.distanceTo(g.to) * 0.3;
+      if (g.t >= 1) finishGlide(obj, g);
+    } else if (u.fly) stepFlight(obj, dt);
+  }
+  for (const tr of trays) { tr.flash = Math.max(0, tr.flash - dt); tr.glow.material.opacity = 0.12 + 0.6 * Math.min(1, tr.flash); }
+  trash.flash = Math.max(0, trash.flash - dt); trash.glow.material.opacity = 0.9 * Math.min(1, trash.flash);
+  for (const s of ships) { s.position.x += s.userData.speed * s.userData.dir * dt; if (Math.abs(s.position.x) > 9.5) s.position.x = -9.5 * s.userData.dir; }
+  if (holoScan) holoScan.material.map.offset.y = (t * 0.06) % 1;
+  if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) hideToast(); }
+  toast3d.visible = presenting && toastTimer > 0;
+  animateCrew(t, dt);
+  renderer.render(scene, camera);
+  if (!window.__officeReady) { window.__officeReady = true; const b = $('#boot'); if (b) b.remove(); }
+}
+
+// ================= build =================
 buildRoom();
 buildWindowView();
 buildLights();
-buildDesk();
-makeTray('revise', -1.05, -0.85);
-makeTray('approve', 1.05, -0.85);
+buildDesk(DESK, true);
+buildDesk(BOARD_T, false);
+makeTray('revise', -0.85);
+makeTray('approve', 0.85);
+buildTrash();
 DOCS.forEach((d, i) => makeDoc(d, i));
-DIRECTORS.forEach(makeDirector);
+CREW.forEach(makeCrew);
 buildConsole();
 buildWelcome();
 buildStations();
