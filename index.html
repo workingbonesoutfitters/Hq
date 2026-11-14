@@ -390,23 +390,88 @@ function overviewHome(){
  const card=(view,tag,name,lines)=>`<button class="card ov-card" data-a="hv|${view}"><div class="ov-top"><div><div class="eyebrow">${tag}</div><b style="font-size:17px">${name}</b></div><span class="ov-go">Open ›</span></div><ul class="ov-lines">${lines.map(l=>`<li>${l}</li>`).join("")}</ul></button>`;
  const parts=[];
  if(has("wb"))parts.push(card("wbc","01 · APPAREL · FOURTHWALL","Working Bones Clothes",[`Store: ${fw}`,`Working Bones tasks: <b>${wb.active}</b> in progress · <b>${wb.appr}</b> need approval`]));
- if(has("wb"))parts.push(card("etsy","02 · LASER FILES · ETSY",esc(e?.shop_name||"Working Bones Etsy"),[`Shop: ${et}`,e?.checked_at?`<span class="hint">Last checked ${esc(hqWhen(e.checked_at))} Eastern</span>`:""].filter(Boolean)));
+ if(has("wb"))parts.push(card("etsy","02 · LASER FILES · ETSY",esc(e?.shop_name||"Working Bones Etsy"),[`Shop: ${et}`,designs.loaded&&!designs.error?`Designs: <b>${designs.rows.filter(d=>d.status==="pending").length}</b> waiting for approval`:"",e?.checked_at?`<span class="hint">Last checked ${esc(hqWhen(e.checked_at))} Eastern</span>`:""].filter(Boolean)));
  if(has("fb"))parts.push(card("fb","03 · PUBLISHING","Funny Bones Kids",[`Tasks: <b>${fb.active}</b> in progress · <b>${fb.appr}</b> need approval · <b>${fb.tasks}</b> tracked`]));
  const allAppr=(has("wb")?wb.appr:0)+(has("fb")?fb.appr:0),allActive=(has("wb")?wb.active:0)+(has("fb")?fb.active:0);
  return `<div class="hero"><div class="eyebrow">THE EXECUTIVE SUITE · OVERVIEW</div><h2>Everything at a glance</h2><p>Quick numbers from every business. Tap one to open it.</p></div><div class="statgrid">${stat("Needs approval",allAppr,"All businesses")}${stat("In progress",allActive,"Queued or active")}${stat("Orders this week",weekKnown?week:"—","Fourthwall + Etsy")}${stat("Stores live",[o,e].filter(fresh).length+"/2","Read-only checks")}</div>${parts.join("")}<p class="hint">Store numbers are read directly from Fourthwall and Etsy three times a day. Counts only, read-only. Task numbers come from Business HQ.</p>${empireOverview()}`;
+}
+// Etsy design approvals (v4.4): owner uploads Bob's files, then Approve or Revise.
+// Private bucket "etsy-designs" + table hq_etsy_designs (owner-only). Approving records a
+// decision only; HQ never lists anything on Etsy.
+let designs={loaded:false,loading:false,error:"",rows:[],urls:{},busy:false,msg:""};
+let hqGoDesigns=new URLSearchParams(location.search).get("go")==="etsy-designs";
+if(hqGoDesigns){homeView="etsy";LS.set("hq_home_view","etsy");tab="home"}
+const DESIGN_TYPES={svg:"image/svg+xml",pdf:"application/pdf",png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",dxf:"application/dxf"};
+async function loadDesigns(){
+ if(!S||!unlocked||demo||designs.loading)return;
+ designs.loading=true;
+ try{
+  const r=await call("/rest/v1/hq_etsy_designs?select=id,title,file_path,file_name,file_type,made_by,status,revision_note,uploaded_at,decided_at&business_id=eq.wb&order=uploaded_at.desc&limit=80");
+  if(!r.ok||!Array.isArray(r.j))throw new Error("Design list unavailable");
+  const rows=r.j,need=rows.filter(d=>d.status!=="approved").concat(rows.filter(d=>d.status==="approved").slice(0,6)).filter(d=>/^(svg|png|jpe?g)$/.test(d.file_type)||d.status!=="approved").map(d=>d.file_path);
+  const urls={};
+  if(need.length){const s=await call("/storage/v1/object/sign/etsy-designs",{method:"POST",body:{expiresIn:3600,paths:need}});if(s.ok&&Array.isArray(s.j))s.j.forEach(x=>{if(x&&x.signedURL&&x.path)urls[x.path]=U+"/storage/v1"+x.signedURL})}
+  designs={...designs,loaded:true,loading:false,error:"",rows,urls};
+ }catch(e){designs={...designs,loaded:true,loading:false,error:"Could not load designs"}}
+ if(tab==="home")render();
+ if(hqGoDesigns){hqGoDesigns=false;setTimeout(()=>document.getElementById("etsy-designs")?.scrollIntoView({behavior:"smooth",block:"start"}),60)}
+}
+async function uploadDesign(){
+ const f=$("#dz_file")?.files?.[0],title=($("#dz_title")?.value||"").trim(),by=$("#dz_by")?.value||"Bob";
+ const ext=(f?.name.split(".").pop()||"").toLowerCase(),type=DESIGN_TYPES[ext];
+ if(!f){designs.msg="Choose a file first.";render();return}
+ if(!type){designs.msg="Use an SVG, PDF, PNG, JPG or DXF file.";render();return}
+ if(f.size>25*1024*1024){designs.msg="That file is over 25 MB.";render();return}
+ const name=(title||f.name.replace(/\.[^.]+$/,"")).slice(0,120);
+ const safe=f.name.toLowerCase().replace(/[^a-z0-9._-]+/g,"-").replace(/-+/g,"-").slice(-80);
+ const path=`wb/${new Date().toISOString().slice(0,10)}/${crypto.randomUUID()}-${safe}`;
+ designs.busy=true;designs.msg="Uploading…";render();
+ try{
+  const up=async()=>fetch(U+"/storage/v1/object/etsy-designs/"+path.split("/").map(encodeURIComponent).join("/"),{method:"POST",headers:{apikey:K,Authorization:"Bearer "+S.at,"Content-Type":type,"x-upsert":"false"},body:f});
+  let r=await up();if(r.status==401&&await refresh())r=await up();
+  if(!r.ok)throw new Error("Upload failed (HTTP "+r.status+")");
+  const ins=await call("/rest/v1/hq_etsy_designs",{method:"POST",headers:{Prefer:"return=minimal"},body:{business_id:"wb",title:name,file_path:path,file_name:f.name.slice(0,200),file_type:ext,made_by:by}});
+  if(!ins.ok)throw new Error("Saved the file but couldn't add it to the list (HTTP "+ins.status+")");
+  designs.msg="✓ Added to the approval queue.";
+ }catch(e){designs.msg=e.message||"Upload failed."}
+ designs.busy=false;designs.loaded=false;render();await loadDesigns();
+}
+async function decideDesign(id,status){
+ const d=designs.rows.find(x=>x.id===id);if(!d)return;
+ const note=status==="revise"?($("#rn_"+id)?.value||"").trim():null;
+ if(status==="revise"&&!note){designs.msg="Write what Bob should change, then tap Revise.";render();return}
+ designs.busy=true;render();
+ const r=await call("/rest/v1/hq_etsy_designs?id=eq."+encodeURIComponent(id),{method:"PATCH",headers:{Prefer:"return=minimal"},body:{status,revision_note:note}});
+ designs.busy=false;designs.msg=r.ok?(status==="approved"?`✓ Approved: ${d.title}`:`Sent back for revision: ${d.title}`):"Couldn't save that decision (HTTP "+r.status+")";
+ designs.loaded=false;render();await loadDesigns();
+}
+function designsCard(){
+ if(demo)return "";
+ const by=s=>designs.rows.filter(d=>d.status===s);
+ const prev=d=>{const u=designs.urls[d.file_path];return u&&/^(svg|png|jpe?g)$/.test(d.file_type)?`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer"><img src="${esc(u)}" alt="${esc(d.title)}" loading="lazy" style="display:block;width:100%;max-height:260px;object-fit:contain;background:#f6f1e6;border-radius:12px;margin:8px 0"></a>`:u?`<p><a href="${esc(u)}" target="_blank" rel="noopener noreferrer">Open ${esc(d.file_type.toUpperCase())} file ↗</a></p>`:""};
+ const meta=d=>`<span class="hint">${esc(d.made_by)} · ${esc(d.file_type.toUpperCase())} · ${esc(hqWhen(d.uploaded_at))}</span>`;
+ const pend=by("pending"),rev=by("revise"),ok=by("approved");
+ const list=!designs.loaded?`<p class="mutedline">Loading designs…</p>`:designs.error?`<p class="err">${esc(designs.error)}</p>`:`
+ <h2 style="margin:16px 0 6px">Waiting for you (${pend.length})</h2>${pend.length?pend.map(d=>`<div class="card" style="margin:8px 0"><b>${esc(d.title)}</b><br>${meta(d)}${prev(d)}<label for="rn_${esc(d.id)}">If it needs changes, tell Bob what to fix</label><textarea id="rn_${esc(d.id)}" rows="2" maxlength="1000" placeholder="Example: make the text thicker, it will burn away"></textarea><div class="actionrow"><button class="ok" data-a="dzok|${esc(d.id)}" ${designs.busy?"disabled":""}>✓ Approve</button><button class="no" data-a="dzrev|${esc(d.id)}" ${designs.busy?"disabled":""}>↺ Revise</button></div></div>`).join(""):`<p class="mutedline">Nothing waiting. New uploads land here.</p>`}
+ ${rev.length?`<h2 style="margin:16px 0 6px">Sent back to Bob (${rev.length})</h2>${rev.map(d=>`<div class="card" style="margin:8px 0"><b>${esc(d.title)}</b><br>${meta(d)}<p style="margin:6px 0"><b>Fix:</b> ${esc(d.revision_note||"")}</p><div class="actionrow"><button data-a="dzcopy|${esc(d.id)}">Copy note for Bob</button></div></div>`).join("")}`:""}
+ ${ok.length?`<h2 style="margin:16px 0 6px">Approved (${ok.length})</h2>${ok.slice(0,12).map(d=>`<p style="margin:6px 0">✓ <b>${esc(d.title)}</b><br>${meta(d)}${designs.urls[d.file_path]?` · <a href="${esc(designs.urls[d.file_path])}" target="_blank" rel="noopener noreferrer">Download</a>`:""}</p>`).join("")}`:""}`;
+ return `<div class="card" id="etsy-designs"><div class="eyebrow">ETSY DESIGN APPROVALS</div><h2 style="margin-top:4px">New design from Bob?</h2><p class="mutedline">Save Bob's file to your iPhone, then add it here. Approving only records your OK to list it. HQ never lists, edits or publishes anything on Etsy.</p>
+ <div class="fieldgrid"><label for="dz_title">Design name<input id="dz_title" maxlength="120" placeholder="Example: Grumpy Skull Coaster"></label><label for="dz_by">Made by<select id="dz_by"><option>Bob</option><option>Ava</option><option>Claude</option><option>Owner</option></select></label></div>
+ <label for="dz_file">File (SVG, PDF, PNG, JPG or DXF, up to 25 MB)<input id="dz_file" type="file" accept=".svg,.pdf,.png,.jpg,.jpeg,.dxf,image/svg+xml,application/pdf,image/png,image/jpeg"></label>
+ <div class="actionrow"><button class="pri" data-a="dzup|" ${designs.busy?"disabled":""}>${designs.busy?"Working…":"Add to approval queue"}</button></div>${designs.msg?`<p class="hint">${esc(designs.msg)}</p>`:""}${list}</div>`;
 }
 function etsyHome(){
  const e=etsySnap.row;
  const shop=e?.shop_name||"WorkingBonesDesigns";
  const head=`<div class="hero"><div class="eyebrow">WORKING BONES · ETSY · VERIFIED</div><h2>${esc(shop)}</h2><p>Your Etsy shop, read live from Etsy. This view only reads; it cannot list, edit or change anything.</p></div>`;
- if(!etsySnap.loaded)return head+`<div class="card"><p class="mutedline">Loading Etsy numbers…</p></div>`;
- if(etsySnap.error)return head+`<div class="card"><p class="err">${esc(etsySnap.error)}</p><div class="actionrow"><button data-a="etsyreload|">Reload</button></div></div>`;
- if(!e)return head+`<div class="card"><p class="mutedline">The Etsy check hasn't run yet. It runs three times a day.</p></div>`;
+ if(!etsySnap.loaded)return head+designsCard()+`<div class="card"><p class="mutedline">Loading Etsy numbers…</p></div>`;
+ if(etsySnap.error)return head+designsCard()+`<div class="card"><p class="err">${esc(etsySnap.error)}</p><div class="actionrow"><button data-a="etsyreload|">Reload</button></div></div>`;
+ if(!e)return head+designsCard()+`<div class="card"><p class="mutedline">The Etsy check hasn't run yet. It runs three times a day.</p></div>`;
  const warn=!e.ok?`<div class="warn"><b>Last Etsy check failed.</b><div class="hint">${esc(e.error||"Unknown error")} · ${esc(hqWhen(e.checked_at))} Eastern. Showing nothing rather than old numbers.</div></div>`:snapStale(e)?`<div class="warn"><b>Etsy numbers are out of date.</b><div class="hint">Last successful check ${esc(hqWhen(e.checked_at))} Eastern.</div></div>`:"";
  const ok=e.ok;
  const sc=ok&&e.status_counts&&typeof e.status_counts==="object"?Object.entries(e.status_counts):[];
  const top=ok&&Array.isArray(e.product_counts)?e.product_counts.slice(0,5):[];
- return head+warn+(ok?`<div class="statgrid">${stat("Active listings",Number.isFinite(e.active_listings)?e.active_listings:"—","Live on Etsy")}${stat("Orders",e.order_count,"All time")}${stat("This week",Number.isFinite(e.orders_last_7_days)?e.orders_last_7_days:"—","Last 7 days")}${stat("Newest order",e.newest_order_at?esc(hqWhen(e.newest_order_at)):"None yet","Eastern")}</div>
+ return head+designsCard()+warn+(ok?`<div class="statgrid">${stat("Active listings",Number.isFinite(e.active_listings)?e.active_listings:"—","Live on Etsy")}${stat("Orders",e.order_count,"All time")}${stat("This week",Number.isFinite(e.orders_last_7_days)?e.orders_last_7_days:"—","Last 7 days")}${stat("Newest order",e.newest_order_at?esc(hqWhen(e.newest_order_at)):"None yet","Eastern")}</div>
  <div class="card"><h2 style="margin-top:0">Top sellers</h2>${top.length?top.map(p=>`<p style="margin:6px 0"><b>${esc(p.name)}</b><br><span class="hint">${p.units} sold · ${p.units_30d} in the last 30 days</span></p>`).join(""):`<p class="mutedline">No Etsy sales yet. Top sellers will show here after your first order.</p>`}${sc.length?`<p class="hint" style="margin-top:10px">Order status: ${sc.map(([k,v])=>`${esc(k)} ${v}`).join(" · ")}</p>`:""}</div>`:"")+
  `<div class="card"><div class="actionrow"><a href="https://www.etsy.com/shop/${encodeURIComponent(shop)}" target="_blank" rel="noopener noreferrer" style="flex:1;display:flex;align-items:center;justify-content:center;min-height:44px;border:1px solid #66532e;border-radius:12px;color:#f3cf88;text-decoration:none;font-weight:600">Open shop on Etsy ↗</a><button data-a="etsyreload|">Reload</button></div><p class="hint">Last checked ${esc(hqWhen(e.checked_at))} Eastern. Read directly from Etsy three times a day with read-only access. Counts only: no customer details, no dollar amounts.</p></div>`+forecastPanel("etsy");
 }
@@ -416,7 +481,7 @@ function bizHome(){
  const title=biz==="wb"?"Working Bones Clothes":(BN[biz]||"Choose a business");
  return `<div class="hero"><div class="eyebrow">THE EXECUTIVE SUITE</div><h2>${esc(title)}</h2><p>Everything important, in one place.</p></div><div class="statgrid">${stat("Tasks",L.length,biz==="wb"?"Working Bones total":"Total tracked")}${stat("Needs approval",A.length,"Waiting for you")}${stat("In progress",active,"Queued or active")}${stat("Completed",done,"Finished tasks")}</div>${pulseCard(true)}${ownerSnapshot()}<h2>Choose a department</h2><div class="quickgrid"><button class="quick" data-a="tab|manager"><div class="symbol">✧</div><strong>AI Manager</strong><span>Give instructions</span></button><button class="quick" data-a="tab|marketing"><div class="symbol">✦</div><strong>Marketing</strong><span>Create campaigns</span></button><button class="quick" data-a="tab|team"><div class="symbol">◇</div><strong>AI Team</strong><span>View departments</span></button><button class="quick" data-a="tab|appr"><div class="symbol">✓</div><strong>Approvals</strong><span>Review decisions</span></button></div><div class="card" style="margin-top:16px"><b><span class="statusdot"></span>Integration status</b><p class="mutedline">Fourthwall reporting is available to the signed-in owner; check Reports for its current status. Claude and Grok are manual handoffs, not connected services. No automatic AI work, publishing, spending or advertising is enabled. No background work runs when the page is closed.</p></div>`;
 }
-{const hqBaseLoad=load;let hqPulseAt=0;load=async function(){await hqBaseLoad();if(S&&unlocked&&!demo&&Date.now()-hqPulseAt>3e5){hqPulseAt=Date.now();loadPostStatus();loadOrderSnap();loadEtsySnap()}}}
+{const hqBaseLoad=load;let hqPulseAt=0;load=async function(){await hqBaseLoad();if(S&&unlocked&&!demo&&Date.now()-hqPulseAt>3e5){hqPulseAt=Date.now();loadPostStatus();loadOrderSnap();loadEtsySnap();loadDesigns()}}}
 // Boardroom preview: only read existing RLS-protected records. No paid AI calls.
 let boardroomCloud={loaded:false,loading:false,error:"",threads:[],messages:[],budget:[]};
 let boardroomText=LS.get("hq_boardroom_local_draft")||"";
@@ -953,7 +1018,11 @@ async function aiCloudAction(action,id){
  }
 }
 async function onclick(e){const br=e.target.closest("[data-a]")?.dataset.a||"";
-if(br.startsWith("hv|")){const v=br.slice(3);if(!HOME_TABS.some(([k])=>k===v))return;homeView=v;LS.set("hq_home_view",v);tab="home";const want=v==="fb"?"fb":v==="all"?biz:"wb";const changed=want!==biz&&D.mem.some(m=>m.business===want);if(changed){biz=want;aiEditId=null;aiCloud={loaded:false,error:"",items:[],busy:false};postStatus={loaded:false,loading:false,error:"",rows:[]}}render();window.scrollTo(0,0);if(changed&&!demo&&S&&unlocked)await loadPostStatus();if(v==="etsy"&&!demo&&S&&unlocked&&!etsySnap.loaded)await loadEtsySnap();return;}
+if(br.startsWith("hv|")){const v=br.slice(3);if(!HOME_TABS.some(([k])=>k===v))return;homeView=v;LS.set("hq_home_view",v);tab="home";const want=v==="fb"?"fb":v==="all"?biz:"wb";const changed=want!==biz&&D.mem.some(m=>m.business===want);if(changed){biz=want;aiEditId=null;aiCloud={loaded:false,error:"",items:[],busy:false};postStatus={loaded:false,loading:false,error:"",rows:[]}}render();window.scrollTo(0,0);if(changed&&!demo&&S&&unlocked)await loadPostStatus();if(v==="etsy"&&!demo&&S&&unlocked){if(!etsySnap.loaded)await loadEtsySnap();await loadDesigns()}return;}
+if(br==="dzup|"){await uploadDesign();return;}
+if(br.startsWith("dzok|")){await decideDesign(br.slice(5),"approved");return;}
+if(br.startsWith("dzrev|")){await decideDesign(br.slice(6),"revise");return;}
+if(br.startsWith("dzcopy|")){const d=designs.rows.find(x=>x.id===br.slice(7));if(d){const t=`REVISION REQUEST — ${d.title} (${d.file_name})\nWhat to fix: ${d.revision_note||""}\nPlease send the corrected file with the same design name plus "v2".`;try{await navigator.clipboard.writeText(t);designs.msg="✓ Copied. Paste it to Bob."}catch(e){designs.msg=t}render()}return;}
 if(br==="etsyreload|"){etsySnap={loaded:false,loading:false,error:"",row:null};render();await loadEtsySnap();return;}
 if(br.startsWith("brvoicetest|")){hqVoiceTest(br.split("|")[1]);return;}
 if(br==="brspeak|"){boardroomText=$("#br_msg")?.value||boardroomText;hqSayLines([{speaker:"chatgpt",text:hqBriefingText()}]);return;}
