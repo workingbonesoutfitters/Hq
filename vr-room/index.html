@@ -1971,7 +1971,7 @@ async function newNote(text) {
 }
 const docKey = (r) => [r.goal, r.result, r.next_recipient, r.file_name, r.status].join('|');
 const designRow = (d) => ({
-  id: `design:${d.id}`, designId: d.id, line: d.line || 'etsy', business: d.line === 'book' ? 'fb' : 'wb', worker: CODE_OF[d.made_by] || 'owner', next_recipient: null,
+  id: `design:${d.id}`, designId: d.id, line: d.line || 'etsy', business: d.line === 'book' ? 'fb' : 'wb', worker: CODE_OF[d.made_by] || (d.made_by === 'Owner' || !d.made_by ? 'owner' : d.made_by), next_recipient: null,
   goal: d.line === 'book' ? `Book page: ${d.title}` : `Etsy design: ${d.title}`, file_name: d.file_name, file_path: d.file_path, file_type: d.file_type, created_at: d.uploaded_at, status: 'ready_for_review', decision: null,
   result: d.line === 'book'
     ? `New coloring-book page from the drop box${d.book_title ? ` for ${d.book_title}` : ''}. Completed = your OK; HQ never uploads anything to KDP. Revised = say what to fix.`
