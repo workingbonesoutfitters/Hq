@@ -186,6 +186,8 @@ body{min-height:100vh;min-height:100dvh}
 .br-voice-samples button{font-size:11px;padding:8px 4px;min-width:0;white-space:normal}
 #hq_voice_rate{accent-color:#efc77f;display:block;width:100%}
 @media(max-width:380px){.br-voice-samples{grid-template-columns:1fr}}
+.hometabs{display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin:0 0 14px;padding:4px;border:1px solid rgba(241,202,123,.24);border-radius:16px;background:rgba(255,255,255,.035)}.hometabs::-webkit-scrollbar{display:none}.hometabs button{flex:1 0 auto;min-height:40px;padding:0 8px;border-radius:12px;font-size:12.5px;white-space:nowrap;background:transparent;border-color:transparent;color:#e9dcc0}.hometabs button.pri{background:linear-gradient(110deg,#d5a955,#fff0b4,#c28d39);border-color:#f3d28b;color:#15120e;font-weight:700}
+.ov-card{display:block;width:100%;text-align:left;margin-bottom:12px}.ov-card .ov-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}.ov-card .ov-go{color:#f3cf88;font-size:13px;white-space:nowrap}.ov-lines{margin:8px 0 0;padding:0;list-style:none}.ov-lines li{font-size:14px;line-height:1.55}.ov-lines b{color:#f8e4b8}
 </style></head><body>
 <header><h1>Business HQ <small>GOLD EDITION · V3.8</small></h1></header>
 <main id="app"><div class="hero"><div class="eyebrow">BUSINESS HQ · GOLD EDITION</div><h2>One headquarters. Two businesses.</h2><p>A simple home for your AI Manager, Marketing, AI Team, and Approvals.</p><div class="gold-beam"></div></div><h2>Your four departments</h2><div class="quickgrid"><div class="quick"><div class="symbol">✧</div><strong>AI Manager</strong><span>Give one instruction and review the plan</span></div><div class="quick"><div class="symbol">✦</div><strong>Marketing</strong><span>Prepare campaigns and drafts</span></div><div class="quick"><div class="symbol">◇</div><strong>AI Team</strong><span>See who handles each job</span></div><div class="quick"><div class="symbol">✓</div><strong>Approvals</strong><span>Review important decisions</span></div></div><section aria-label="Empire Overview preview"><div class="empire-head"><div><div class="eyebrow">THE EMPIRE OVERVIEW</div><h2>Both businesses. One screen.</h2></div></div><div class="empire-grid"><article class="empire-card"><div class="empire-tag">01 · Apparel</div><div class="empire-name">Working Bones Outfitters</div><div class="empire-gauge" style="--score:0"><div class="empire-gauge-inner"><b>—</b><small>NO DATA</small></div></div><div class="empire-data"><div><b>—</b><small>Revenue</small></div><div><b>—</b><small>Profit</small></div></div><p class="empire-note">Awaiting verified sales data</p></article><article class="empire-card"><div class="empire-tag">02 · Publishing</div><div class="empire-name">Funny Bones Kids</div><div class="empire-gauge" style="--score:0"><div class="empire-gauge-inner"><b>—</b><small>NO DATA</small></div></div><div class="empire-data"><div><b>—</b><small>Revenue</small></div><div><b>—</b><small>Profit</small></div></div><p class="empire-note">Awaiting verified sales data</p></article></div></section><div class="card" style="margin-top:18px"><b>Preview only</b><p class="mutedline">This file preview shows the design; open the hosted website to use the working app. If the buttons don't respond, the preview is blocking JavaScript. A securely hosted HTTPS version is required to test the interactive app in Safari. No ads, purchases, or publishing are enabled.</p></div></main><nav id="nav"></nav>
@@ -358,10 +360,60 @@ function ownerSnapshot(){
  <div class="row"><button data-a="tab|reports">Open reports</button><button data-a="tab|appr">Review approvals</button></div>
  <p class="mutedline">No verified profit, refund reconciliation, paid AI execution or publishing automation is enabled.</p></div>`;
 }
+// Home tabs (v4.2): Overview · Working Bones Clothes · Working Bones Etsy · Funny Bones Kids.
+// Clothes and Etsy share the "wb" business in Supabase; Funny Bones Kids is "fb".
+let homeView=["all","wbc","etsy","fb"].includes(LS.get("hq_home_view"))?LS.get("hq_home_view"):"all";
+const HOME_TABS=[["all","Overview"],["wbc","WB Clothes"],["etsy","WB Etsy"],["fb","Funny Bones Kids"]];
+function homeTabs(){
+ const have=b=>D.mem.some(m=>m.business===b);
+ return `<div class="hometabs" role="tablist" aria-label="Home sections">${HOME_TABS.filter(([v])=>v==="all"||have(v==="fb"?"fb":"wb")).map(([v,l])=>`<button data-a="hv|${v}" class="${homeView===v?"pri":""}" role="tab" aria-selected="${homeView===v}">${l}</button>`).join("")}</div>`;
+}
+const hqWhen=d=>{try{return new Date(d).toLocaleString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}catch(e){return ""}};
+const snapStale=r=>Date.now()-Date.parse(r.checked_at)>36*36e5;
 function home(){
+ if(!D.mem.length)return BIZ();
+ if(homeView!=="all"){const want=homeView==="fb"?"fb":"wb";if(!D.mem.some(m=>m.business===want))homeView="all";else if(biz!==want)biz=want}
+ if(homeView==="all")return homeTabs()+overviewHome();
+ if(homeView==="etsy")return homeTabs()+etsyHome();
+ return homeTabs()+bizHome();
+}
+function overviewHome(){
+ const cnt=b=>{const L=D.tasks.filter(t=>t.business===b);return{tasks:L.length,appr:D.apprs.filter(a=>a.business===b).length,active:L.filter(t=>["queued","claimed","running","approved"].includes(t.status)).length}};
+ const has=b=>D.mem.some(m=>m.business===b);
+ const wb=cnt("wb"),fb=cnt("fb"),o=orderSnap.row,e=etsySnap.row;
+ const fresh=r=>r&&r.ok&&!snapStale(r);
+ const week=(fresh(o)&&Number.isFinite(o.orders_last_7_days)?o.orders_last_7_days:0)+(fresh(e)&&Number.isFinite(e.orders_last_7_days)?e.orders_last_7_days:0);
+ const weekKnown=fresh(o)||fresh(e);
+ const fw=!orderSnap.loaded?"Checking…":!o?"Order check hasn't run yet":!o.ok?"⚠ Last check failed":snapStale(o)?"⚠ Out of date":`<b>${o.order_count}</b> order${o.order_count===1?"":"s"} total · <b>${Number.isFinite(o.orders_last_7_days)?o.orders_last_7_days:"—"}</b> this week`;
+ const et=!etsySnap.loaded?"Checking…":!e?"Etsy check hasn't run yet":!e.ok?"⚠ Last check failed":snapStale(e)?"⚠ Out of date":`<b>${Number.isFinite(e.active_listings)?e.active_listings:"—"}</b> active listings · <b>${e.order_count}</b> order${e.order_count===1?"":"s"} · <b>${Number.isFinite(e.orders_last_7_days)?e.orders_last_7_days:"—"}</b> this week`;
+ const card=(view,tag,name,lines)=>`<button class="card ov-card" data-a="hv|${view}"><div class="ov-top"><div><div class="eyebrow">${tag}</div><b style="font-size:17px">${name}</b></div><span class="ov-go">Open ›</span></div><ul class="ov-lines">${lines.map(l=>`<li>${l}</li>`).join("")}</ul></button>`;
+ const parts=[];
+ if(has("wb"))parts.push(card("wbc","01 · APPAREL · FOURTHWALL","Working Bones Clothes",[`Store: ${fw}`,`Working Bones tasks: <b>${wb.active}</b> in progress · <b>${wb.appr}</b> need approval`]));
+ if(has("wb"))parts.push(card("etsy","02 · LASER FILES · ETSY",esc(e?.shop_name||"Working Bones Etsy"),[`Shop: ${et}`,e?.checked_at?`<span class="hint">Last checked ${esc(hqWhen(e.checked_at))} Eastern</span>`:""].filter(Boolean)));
+ if(has("fb"))parts.push(card("fb","03 · PUBLISHING","Funny Bones Kids",[`Tasks: <b>${fb.active}</b> in progress · <b>${fb.appr}</b> need approval · <b>${fb.tasks}</b> tracked`]));
+ const allAppr=(has("wb")?wb.appr:0)+(has("fb")?fb.appr:0),allActive=(has("wb")?wb.active:0)+(has("fb")?fb.active:0);
+ return `<div class="hero"><div class="eyebrow">THE EXECUTIVE SUITE · OVERVIEW</div><h2>Everything at a glance</h2><p>Quick numbers from every business. Tap one to open it.</p></div><div class="statgrid">${stat("Needs approval",allAppr,"All businesses")}${stat("In progress",allActive,"Queued or active")}${stat("Orders this week",weekKnown?week:"—","Fourthwall + Etsy")}${stat("Stores live",[o,e].filter(fresh).length+"/2","Read-only checks")}</div>${parts.join("")}<p class="hint">Store numbers are read directly from Fourthwall and Etsy three times a day. Counts only, read-only. Task numbers come from Business HQ.</p>${empireOverview()}`;
+}
+function etsyHome(){
+ const e=etsySnap.row;
+ const shop=e?.shop_name||"WorkingBonesDesigns";
+ const head=`<div class="hero"><div class="eyebrow">WORKING BONES · ETSY · VERIFIED</div><h2>${esc(shop)}</h2><p>Your Etsy shop, read live from Etsy. This view only reads; it cannot list, edit or change anything.</p></div>`;
+ if(!etsySnap.loaded)return head+`<div class="card"><p class="mutedline">Loading Etsy numbers…</p></div>`;
+ if(etsySnap.error)return head+`<div class="card"><p class="err">${esc(etsySnap.error)}</p><div class="actionrow"><button data-a="etsyreload|">Reload</button></div></div>`;
+ if(!e)return head+`<div class="card"><p class="mutedline">The Etsy check hasn't run yet. It runs three times a day.</p></div>`;
+ const warn=!e.ok?`<div class="warn"><b>Last Etsy check failed.</b><div class="hint">${esc(e.error||"Unknown error")} · ${esc(hqWhen(e.checked_at))} Eastern. Showing nothing rather than old numbers.</div></div>`:snapStale(e)?`<div class="warn"><b>Etsy numbers are out of date.</b><div class="hint">Last successful check ${esc(hqWhen(e.checked_at))} Eastern.</div></div>`:"";
+ const ok=e.ok;
+ const sc=ok&&e.status_counts&&typeof e.status_counts==="object"?Object.entries(e.status_counts):[];
+ const top=ok&&Array.isArray(e.product_counts)?e.product_counts.slice(0,5):[];
+ return head+warn+(ok?`<div class="statgrid">${stat("Active listings",Number.isFinite(e.active_listings)?e.active_listings:"—","Live on Etsy")}${stat("Orders",e.order_count,"All time")}${stat("This week",Number.isFinite(e.orders_last_7_days)?e.orders_last_7_days:"—","Last 7 days")}${stat("Newest order",e.newest_order_at?esc(hqWhen(e.newest_order_at)):"None yet","Eastern")}</div>
+ <div class="card"><h2 style="margin-top:0">Top sellers</h2>${top.length?top.map(p=>`<p style="margin:6px 0"><b>${esc(p.name)}</b><br><span class="hint">${p.units} sold · ${p.units_30d} in the last 30 days</span></p>`).join(""):`<p class="mutedline">No Etsy sales yet. Top sellers will show here after your first order.</p>`}${sc.length?`<p class="hint" style="margin-top:10px">Order status: ${sc.map(([k,v])=>`${esc(k)} ${v}`).join(" · ")}</p>`:""}</div>`:"")+
+ `<div class="card"><div class="actionrow"><a href="https://www.etsy.com/shop/${encodeURIComponent(shop)}" target="_blank" rel="noopener noreferrer" style="flex:1;display:flex;align-items:center;justify-content:center;min-height:44px;border:1px solid #66532e;border-radius:12px;color:#f3cf88;text-decoration:none;font-weight:600">Open shop on Etsy ↗</a><button data-a="etsyreload|">Reload</button></div><p class="hint">Last checked ${esc(hqWhen(e.checked_at))} Eastern. Read directly from Etsy three times a day with read-only access. Counts only: no customer details, no dollar amounts.</p></div>`;
+}
+function bizHome(){
  const L=D.tasks.filter(t=>t.business==biz), A=D.apprs.filter(a=>a.business==biz);
  const done=L.filter(t=>t.status==="done").length,active=L.filter(t=>["queued","claimed","running","approved"].includes(t.status)).length;
- return BIZ()+`<div class="hero"><div class="eyebrow">THE EXECUTIVE SUITE</div><h2>${esc(BN[biz]||"Choose a business")}</h2><p>Everything important, in one place.</p></div><div class="statgrid">${stat("Tasks",L.length,"Total tracked")}${stat("Needs approval",A.length,"Waiting for you")}${stat("In progress",active,"Queued or active")}${stat("Completed",done,"Finished tasks")}</div>${pulseCard()}${ownerSnapshot()}${empireOverview()}<h2>Choose a department</h2><div class="quickgrid"><button class="quick" data-a="tab|manager"><div class="symbol">✧</div><strong>AI Manager</strong><span>Give instructions</span></button><button class="quick" data-a="tab|marketing"><div class="symbol">✦</div><strong>Marketing</strong><span>Create campaigns</span></button><button class="quick" data-a="tab|team"><div class="symbol">◇</div><strong>AI Team</strong><span>View departments</span></button><button class="quick" data-a="tab|appr"><div class="symbol">✓</div><strong>Approvals</strong><span>Review decisions</span></button></div><div class="card" style="margin-top:16px"><b><span class="statusdot"></span>Integration status</b><p class="mutedline">Fourthwall reporting is available to the signed-in owner; check Reports for its current status. Claude and Grok are manual handoffs, not connected services. No automatic AI work, publishing, spending or advertising is enabled. No background work runs when the page is closed.</p></div>`;
+ const title=biz==="wb"?"Working Bones Clothes":(BN[biz]||"Choose a business");
+ return `<div class="hero"><div class="eyebrow">THE EXECUTIVE SUITE</div><h2>${esc(title)}</h2><p>Everything important, in one place.</p></div><div class="statgrid">${stat("Tasks",L.length,biz==="wb"?"Working Bones total":"Total tracked")}${stat("Needs approval",A.length,"Waiting for you")}${stat("In progress",active,"Queued or active")}${stat("Completed",done,"Finished tasks")}</div>${pulseCard(true)}${ownerSnapshot()}<h2>Choose a department</h2><div class="quickgrid"><button class="quick" data-a="tab|manager"><div class="symbol">✧</div><strong>AI Manager</strong><span>Give instructions</span></button><button class="quick" data-a="tab|marketing"><div class="symbol">✦</div><strong>Marketing</strong><span>Create campaigns</span></button><button class="quick" data-a="tab|team"><div class="symbol">◇</div><strong>AI Team</strong><span>View departments</span></button><button class="quick" data-a="tab|appr"><div class="symbol">✓</div><strong>Approvals</strong><span>Review decisions</span></button></div><div class="card" style="margin-top:16px"><b><span class="statusdot"></span>Integration status</b><p class="mutedline">Fourthwall reporting is available to the signed-in owner; check Reports for its current status. Claude and Grok are manual handoffs, not connected services. No automatic AI work, publishing, spending or advertising is enabled. No background work runs when the page is closed.</p></div>`;
 }
 {const hqBaseLoad=load;let hqPulseAt=0;load=async function(){await hqBaseLoad();if(S&&unlocked&&!demo&&Date.now()-hqPulseAt>3e5){hqPulseAt=Date.now();loadPostStatus();loadOrderSnap();loadEtsySnap()}}}
 // Boardroom preview: only read existing RLS-protected records. No paid AI calls.
@@ -662,12 +714,12 @@ async function loadEtsySnap(){
  if(!S||!unlocked||demo||etsySnap.loading)return;
  etsySnap.loading=true;
  try{
-  const r=await call("/rest/v1/hq_etsy_snapshots?select=checked_at,ok,shop_name,active_listings,order_count,orders_last_7_days,newest_order_at,error&business_id=eq.wb&order=checked_at.desc&limit=1");
+  const r=await call("/rest/v1/hq_etsy_snapshots?select=checked_at,ok,shop_name,active_listings,order_count,orders_last_7_days,newest_order_at,status_counts,product_counts,error&business_id=eq.wb&order=checked_at.desc&limit=1");
   etsySnap=r.ok&&Array.isArray(r.j)?{loaded:true,loading:false,error:"",row:r.j[0]||null}:{loaded:true,loading:false,error:"Etsy check unavailable",row:null};
  }catch(e){etsySnap={loaded:true,loading:false,error:"Could not reach Etsy check",row:null}}
  if(tab==="home")render();
 }
-function pulseCard(){
+function pulseCard(hideEtsy=false){
  const when=d=>{try{return new Date(d).toLocaleString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}catch(e){return ""}};
  const pub=postStatus.rows.filter(r=>r.status==="published");
  const bad=postStatus.rows.filter(r=>r.status==="missed"||r.status==="error");
@@ -683,7 +735,7 @@ function pulseCard(){
  let etsy="";
  if(biz==="wb"){const e=etsySnap.row;
   etsy=!etsySnap.loaded?"Checking…":etsySnap.error?esc(etsySnap.error):!e?"Etsy check hasn't run yet.":!e.ok?`⚠ Last Etsy check failed (${esc(when(e.checked_at))}).`:(Date.now()-Date.parse(e.checked_at)>36*36e5)?`⚠ Etsy check is out of date (last ${esc(when(e.checked_at))}).`:`${Number.isFinite(e.active_listings)?`${e.active_listings} active listing${e.active_listings===1?"":"s"} · `:""}${e.order_count} order${e.order_count===1?"":"s"} total${Number.isFinite(e.orders_last_7_days)?` · ${e.orders_last_7_days} this week`:""}${e.newest_order_at?` · newest ${esc(when(e.newest_order_at))}`:""}`;}
- return `<div class="card"><div class="eyebrow">HQ PULSE · VERIFIED</div><p style="margin:8px 0 4px"><b>Last post:</b> ${post}</p>${biz==="wb"?`<p style="margin:4px 0"><b>Store orders:</b> ${orders}</p><p style="margin:4px 0"><b>Etsy shop:</b> ${etsy}</p><p class="hint">Live counts read directly from Fourthwall and Etsy three times a day. Read-only; counts only.</p>`:""}<div class="actionrow"><button data-a="tab|marketing">Post details</button></div></div>`;
+ return `<div class="card"><div class="eyebrow">HQ PULSE · VERIFIED</div><p style="margin:8px 0 4px"><b>Last post:</b> ${post}</p>${biz==="wb"?`<p style="margin:4px 0"><b>Store orders:</b> ${orders}</p>${hideEtsy?`<p class="hint">Orders read directly from Fourthwall three times a day. Counts only. Etsy has its own tab.</p>`:`<p style="margin:4px 0"><b>Etsy shop:</b> ${etsy}</p><p class="hint">Live counts read directly from Fourthwall and Etsy three times a day. Read-only; counts only.</p>`}`:""}<div class="actionrow"><button data-a="tab|marketing">Post details</button></div></div>`;
 }
 function marketing(isDemo=false){
  const b=CAMPAIGNS[biz]||CAMPAIGNS.wb;
@@ -898,6 +950,8 @@ async function aiCloudAction(action,id){
  }
 }
 async function onclick(e){const br=e.target.closest("[data-a]")?.dataset.a||"";
+if(br.startsWith("hv|")){const v=br.slice(3);if(!HOME_TABS.some(([k])=>k===v))return;homeView=v;LS.set("hq_home_view",v);tab="home";const want=v==="fb"?"fb":v==="all"?biz:"wb";const changed=want!==biz&&D.mem.some(m=>m.business===want);if(changed){biz=want;aiEditId=null;aiCloud={loaded:false,error:"",items:[],busy:false};postStatus={loaded:false,loading:false,error:"",rows:[]}}render();window.scrollTo(0,0);if(changed&&!demo&&S&&unlocked)await loadPostStatus();if(v==="etsy"&&!demo&&S&&unlocked&&!etsySnap.loaded)await loadEtsySnap();return;}
+if(br==="etsyreload|"){etsySnap={loaded:false,loading:false,error:"",row:null};render();await loadEtsySnap();return;}
 if(br.startsWith("brvoicetest|")){hqVoiceTest(br.split("|")[1]);return;}
 if(br==="brspeak|"){boardroomText=$("#br_msg")?.value||boardroomText;hqSayLines([{speaker:"chatgpt",text:hqBriefingText()}]);return;}
 if(br==="brteamvoice|"){boardroomText=$("#br_msg")?.value||boardroomText;hqReadTeam();return;}
