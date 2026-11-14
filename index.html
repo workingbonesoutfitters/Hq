@@ -400,7 +400,7 @@ function overviewHome(){
 // decision only; HQ never lists anything on Etsy.
 let designs={loaded:false,loading:false,error:"",rows:[],urls:{},busy:false,msg:""};
 let hqGoDesigns=new URLSearchParams(location.search).get("go")==="etsy-designs";
-if(hqGoDesigns){homeView="etsy";LS.set("hq_home_view","etsy");tab="home"}
+if(hqGoDesigns){homeView="etsy";LS.set("hq_home_view","etsy");tab="home";demo=false}
 const DESIGN_TYPES={svg:"image/svg+xml",pdf:"application/pdf",png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",dxf:"application/dxf"};
 async function loadDesigns(){
  if(!S||!unlocked||demo||designs.loading)return;
