@@ -41,9 +41,12 @@ small{color:var(--muted)}
 const U="https://whvgwshdppluudzkhcqp.supabase.co",K="sb_publishable_NBCZbtnprQY7ffHOeTe4kQ_PCBF9skl",BUCKET="etsy-designs";
 const ALL_TYPES={svg:"image/svg+xml",pdf:"application/pdf",png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",dxf:"application/dxf"};
 // Two drop boxes, one approval queue: Etsy laser/vector files, and shirt designs for Working Bones Clothes.
-const BOXES={etsy:{name:"Etsy designs",sub:"Working Bones · Etsy laser and vector files for owner approval.",exts:["svg","pdf","png","jpg","jpeg","dxf"],bad:"use SVG, PDF, PNG, JPG or DXF.",fileLabel:"Files: SVG, DXF, PDF, PNG preview (select several at once)",accept:".svg,.pdf,.png,.jpg,.jpeg,.dxf",ph:"Grumpy Skull Coaster v1",folder:""},
- shirt:{name:"Shirt designs",sub:"Working Bones Clothes · shirt print files for owner approval. They also show up in the owner's VR Apparel Corner.",exts:["png","jpg","jpeg"],bad:"use a PNG or JPG print file (transparent PNG is best).",fileLabel:"Print file: PNG or JPG, at least 3000 px tall if you can",accept:".png,.jpg,.jpeg",ph:"Built for the Working Dead tee v1",folder:"shirts/"}};
-let box=/^shirts?$/.test(new URLSearchParams(location.search).get("box")||"")?"shirt":"etsy";
+const BOXES={etsy:{name:"Etsy designs",sub:"Working Bones · Etsy laser and vector files for owner approval.",exts:["svg","pdf","png","jpg","jpeg","dxf"],bad:"use SVG, PDF, PNG, JPG or DXF.",fileLabel:"Files: SVG, DXF, PDF, PNG preview (select several at once)",accept:".svg,.pdf,.png,.jpg,.jpeg,.dxf",ph:"Grumpy Skull Coaster v1",folder:"",biz:"wb",what:"an Etsy design"},
+ shirt:{name:"Shirt designs",sub:"Working Bones Clothes · shirt print files for owner approval. They also show up in the owner's VR Apparel Corner.",exts:["png","jpg","jpeg"],bad:"use a PNG or JPG print file (transparent PNG is best).",fileLabel:"Print file: PNG or JPG, at least 3000 px tall if you can",accept:".png,.jpg,.jpeg",ph:"Built for the Working Dead tee v1",folder:"shirts/",biz:"wb",what:"a shirt design"},
+ book:{name:"Coloring book",sub:"Funny Bones Kids · coloring-book pages for owner approval. They also show up on the owner's VR Book Stand.",exts:["png","jpg","jpeg","pdf"],bad:"use a PNG or JPG page (PDF for the full interior or cover).",fileLabel:"Pages: PNG or JPG, one file per page (PDF for a full interior or cover)",accept:".png,.jpg,.jpeg,.pdf",ph:"Bandit meets a moon cow",folder:"books/",biz:"fb",what:"coloring-book pages"}};
+const qBox=new URLSearchParams(location.search).get("box")||"";
+let box=/^shirts?$/.test(qBox)?"shirt":/^books?$/.test(qBox)?"book":"etsy";
+let lastBook=LS.get("hq_drop_book")||"";
 const TYPES=ext=>BOXES[box].exts.includes(ext)?ALL_TYPES[ext]:null;
 const LS={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
 const $=s=>document.querySelector(s),esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -78,19 +81,23 @@ async function signIn(){
 function signOut(){if(S)fetch(U+"/auth/v1/logout",{method:"POST",headers:{apikey:K,Authorization:"Bearer "+S.at}}).catch(()=>{});S=null;me=null;rows=[];LS.del("hq_drop_sess");msg="Signed out.";msgCls="";render()}
 async function boot(){
  if(!S)return render();
- const r=await api("/rest/v1/hq_uploaders?select=label,active,business_id&user_id=eq."+encodeURIComponent(uid()));
+ const r=await api("/rest/v1/hq_uploaders?select=label,active,business_id&active=is.true&user_id=eq."+encodeURIComponent(uid()));
  if(!S)return render();
- me=r.ok&&Array.isArray(r.j)&&r.j[0]&&r.j[0].active?r.j[0]:false;
+ const mine=r.ok&&Array.isArray(r.j)?r.j.filter(x=>x.active):[];
+ me=mine.length?{label:mine[0].label,biz:Object.fromEntries(mine.map(x=>[x.business_id,x.label]))}:false;
+ if(me&&!me.biz[BOXES[box].biz])box=Object.keys(BOXES).find(k=>me.biz[BOXES[k].biz])||box;
  if(me)await loadRows();
  render();
 }
 async function loadRows(){
- const r=await api("/rest/v1/hq_etsy_designs?select=title,file_name,file_type,status,revision_note,uploaded_at,decided_at&line=eq."+box+"&order=uploaded_at.desc&limit=60");
+ const r=await api("/rest/v1/hq_etsy_designs?select=title,file_name,file_type,status,revision_note,uploaded_at,decided_at&line=eq."+box+"&order=uploaded_at.desc&limit=80");
  rows=r.ok&&Array.isArray(r.j)?r.j:[];
 }
 async function upload(){
- const files=[...($("#file").files||[])],title=$("#title").value.trim();
- if(!title){msg="Give the design a name first.";msgCls="bad";return render()}
+ const files=[...($("#file").files||[])],title=$("#title").value.trim(),B=BOXES[box],book=box==="book"?($("#book").value||"").trim():"",pg0=box==="book"?parseInt($("#page").value,10):NaN;
+ if(box==="book"&&!book){msg="Which book are these pages for?";msgCls="bad";return render()}
+ if(box==="book"){lastBook=book;LS.set("hq_drop_book",book)}
+ if(!title&&box!=="book"){msg="Give the design a name first.";msgCls="bad";return render()}
  if(!files.length){msg="Choose at least one file.";msgCls="bad";return render()}
  for(const f of files){const ext=(f.name.split(".").pop()||"").toLowerCase();if(!TYPES(ext)){msg=`${f.name}: ${BOXES[box].bad}`;msgCls="bad";return render()}if(f.size>25*1024*1024){msg=`${f.name} is over 25 MB.`;msgCls="bad";return render()}}
  busy=true;msg=`Uploading ${files.length} file${files.length>1?"s":""}…`;msgCls="";render();
@@ -98,11 +105,12 @@ async function upload(){
  for(const f of files){
   const ext=f.name.split(".").pop().toLowerCase(),type=TYPES(ext);
   const safe=f.name.toLowerCase().replace(/[^a-z0-9._-]+/g,"-").replace(/-+/g,"-").slice(-80);
-  const path=`wb/up/${uid()}/${BOXES[box].folder}${new Date().toISOString().slice(0,10)}-${crypto.randomUUID()}-${safe}`;
+  const path=`${B.biz}/up/${uid()}/${B.folder}${new Date().toISOString().slice(0,10)}-${crypto.randomUUID()}-${safe}`;
   const up=await api("/storage/v1/object/"+BUCKET+"/"+path.split("/").map(encodeURIComponent).join("/"),{method:"POST",headers:{"Content-Type":type,"x-upsert":"false"},body:f});
   if(!up.ok){fails.push(`${f.name} (upload ${up.status})`);continue}
-  const name=files.length>1?`${title} · ${ext.toUpperCase()}`:title;
-  const ins=await api("/rest/v1/hq_etsy_designs",{method:"POST",headers:{"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({business_id:"wb",line:box,title:name.slice(0,120),file_path:path,file_name:f.name.slice(0,200),file_type:ext,made_by:me.label,uploaded_by:uid()})});
+  const i=files.indexOf(f),pg=Number.isFinite(pg0)?pg0+i:null;
+  const name=box==="book"?`${book}${pg!=null?` · page ${pg}`:""}${title?` · ${title}`:""}`:files.length>1?`${title} · ${ext.toUpperCase()}`:title;
+  const ins=await api("/rest/v1/hq_etsy_designs",{method:"POST",headers:{"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({business_id:B.biz,line:box,made_by:me.biz[B.biz],...(box==="book"?{book_title:book.slice(0,120),page_no:pg!=null&&pg>=0&&pg<=999?pg:null}:{}),title:name.slice(0,120),file_path:path,file_name:f.name.slice(0,200),file_type:ext,uploaded_by:uid()})});
   if(!ins.ok){fails.push(`${f.name} (list ${ins.status})`);continue}
   done++;
  }
@@ -120,16 +128,19 @@ function render(){
  if(me===false){a.innerHTML=`<div class="card"><b>This account can't use the drop box.</b><p>It isn't set up as an uploader. The owner uses Business HQ instead.</p><button class="ghost" data-a="out">Sign out</button></div>`;return}
  const st={pending:"Waiting for owner",approved:"Approved",revise:"Needs changes"};
  const list=rows.length?rows.map(r=>`<div class="item"><b>${esc(r.title)}</b><span class="chip ${esc(r.status)}">${esc(st[r.status]||r.status)}</span><br><small>${esc(r.file_name)} · sent ${esc(when(r.uploaded_at))}${r.decided_at?` · decided ${esc(when(r.decided_at))}`:""}</small>${r.status==="revise"&&r.revision_note?`<div class="note"><b>What to fix:</b> ${esc(r.revision_note)}</div>`:""}</div>`).join(""):`<p>No uploads yet.</p>`;
- const seg=`<div class="seg">${Object.entries(BOXES).map(([k,v])=>`<button class="${k===box?"":"ghost"}" data-a="box|${k}" aria-pressed="${k===box}">${esc(v.name)}</button>`).join("")}</div>`;
- a.innerHTML=`${seg}<div class="card"><b>Send ${box==="shirt"?"a shirt design":"an Etsy design"} for approval</b><small style="display:block;margin-top:2px">Signed in as ${esc(me.label)} (${esc(S.em||"")})</small>
- <label for="title">Design name</label><input id="title" maxlength="100" placeholder="${esc(B.ph)}">
+ const seg=`<div class="seg">${Object.entries(BOXES).filter(([k,v])=>me.biz[v.biz]).map(([k,v])=>`<button class="${k===box?"":"ghost"}" data-a="box|${k}" aria-pressed="${k===box}">${esc(v.name)}</button>`).join("")}</div>`;
+ const bookFields=box==="book"?`<label for="book">Book title</label><input id="book" maxlength="100" placeholder="Bandit Blasts Off!" value="${esc(lastBook)}">
+ <label for="page">Page number (first file; the rest count up)</label><input id="page" type="number" inputmode="numeric" min="0" max="999" placeholder="12">
+ <label for="title">Page name (optional)</label><input id="title" maxlength="100" placeholder="${esc(B.ph)}">`:`<label for="title">Design name</label><input id="title" maxlength="100" placeholder="${esc(B.ph)}">`;
+ a.innerHTML=`${seg}<div class="card"><b>Send ${B.what} for approval</b><small style="display:block;margin-top:2px">Signed in as ${esc(me.biz[B.biz]||me.label)} (${esc(S.em||"")})</small>
+ ${bookFields}
  <label for="file">${esc(B.fileLabel)}</label><input id="file" type="file" multiple accept="${B.accept}">
  <button data-a="up" ${busy?"disabled":""}>${busy?"Working…":"Send for approval"}</button>${m}</div>
- <div class="card"><h2 style="margin-top:0">Your ${box==="shirt"?"shirt":"Etsy"} uploads</h2>${list}<button class="ghost" data-a="reload">Refresh</button></div>
+ <div class="card"><h2 style="margin-top:0">Your ${box==="shirt"?"shirt":box==="book"?"coloring-book":"Etsy"} uploads</h2>${list}<button class="ghost" data-a="reload">Refresh</button></div>
  <button class="ghost" data-a="out">Sign out</button>`;
 }
 document.addEventListener("click",async e=>{const b=e.target.closest("[data-a]");if(!b||busy)return;const x=b.dataset.a;
- if(x.startsWith("box|")){const k=x.slice(4);if(!BOXES[k]||k===box)return;box=k;try{history.replaceState(null,"",k==="shirt"?"?box=shirts":location.pathname)}catch(e){}msg="";rows=[];render();if(me)await loadRows();render();return}
+ if(x.startsWith("box|")){const k=x.slice(4);if(!BOXES[k]||k===box)return;box=k;try{history.replaceState(null,"",k==="shirt"?"?box=shirts":k==="book"?"?box=books":location.pathname)}catch(e){}msg="";rows=[];render();if(me)await loadRows();render();return}
  if(x==="in")await signIn();else if(x==="up")await upload();else if(x==="out")signOut();else if(x==="reload"){await loadRows();msg="";render()}});
 document.addEventListener("keydown",e=>{if(e.key==="Enter"&&!S&&(e.target.id==="pw"||e.target.id==="em"))signIn()});
 boot();
