@@ -363,7 +363,7 @@ function home(){
  const done=L.filter(t=>t.status==="done").length,active=L.filter(t=>["queued","claimed","running","approved"].includes(t.status)).length;
  return BIZ()+`<div class="hero"><div class="eyebrow">THE EXECUTIVE SUITE</div><h2>${esc(BN[biz]||"Choose a business")}</h2><p>Everything important, in one place.</p></div><div class="statgrid">${stat("Tasks",L.length,"Total tracked")}${stat("Needs approval",A.length,"Waiting for you")}${stat("In progress",active,"Queued or active")}${stat("Completed",done,"Finished tasks")}</div>${pulseCard()}${ownerSnapshot()}${empireOverview()}<h2>Choose a department</h2><div class="quickgrid"><button class="quick" data-a="tab|manager"><div class="symbol">✧</div><strong>AI Manager</strong><span>Give instructions</span></button><button class="quick" data-a="tab|marketing"><div class="symbol">✦</div><strong>Marketing</strong><span>Create campaigns</span></button><button class="quick" data-a="tab|team"><div class="symbol">◇</div><strong>AI Team</strong><span>View departments</span></button><button class="quick" data-a="tab|appr"><div class="symbol">✓</div><strong>Approvals</strong><span>Review decisions</span></button></div><div class="card" style="margin-top:16px"><b><span class="statusdot"></span>Integration status</b><p class="mutedline">Fourthwall reporting is available to the signed-in owner; check Reports for its current status. Claude and Grok are manual handoffs, not connected services. No automatic AI work, publishing, spending or advertising is enabled. No background work runs when the page is closed.</p></div>`;
 }
-{const hqBaseLoad=load;let hqPulseAt=0;load=async function(){await hqBaseLoad();if(S&&unlocked&&!demo&&Date.now()-hqPulseAt>3e5){hqPulseAt=Date.now();loadPostStatus();loadOrderSnap()}}}
+{const hqBaseLoad=load;let hqPulseAt=0;load=async function(){await hqBaseLoad();if(S&&unlocked&&!demo&&Date.now()-hqPulseAt>3e5){hqPulseAt=Date.now();loadPostStatus();loadOrderSnap();loadEtsySnap()}}}
 // Boardroom preview: only read existing RLS-protected records. No paid AI calls.
 let boardroomCloud={loaded:false,loading:false,error:"",threads:[],messages:[],budget:[]};
 let boardroomText=LS.get("hq_boardroom_local_draft")||"";
@@ -655,6 +655,18 @@ async function loadOrderSnap(){
  }catch(e){orderSnap={loaded:true,loading:false,error:"Could not reach order check",row:null}}
  if(tab==="home")render();
 }
+// Etsy (v4.1): shop counts read directly from Etsy by etsy-sync (hq_etsy_snapshots).
+// Read-only scopes; counts only, no customer data, no amounts.
+let etsySnap={loaded:false,loading:false,error:"",row:null};
+async function loadEtsySnap(){
+ if(!S||!unlocked||demo||etsySnap.loading)return;
+ etsySnap.loading=true;
+ try{
+  const r=await call("/rest/v1/hq_etsy_snapshots?select=checked_at,ok,shop_name,active_listings,order_count,orders_last_7_days,newest_order_at,error&business_id=eq.wb&order=checked_at.desc&limit=1");
+  etsySnap=r.ok&&Array.isArray(r.j)?{loaded:true,loading:false,error:"",row:r.j[0]||null}:{loaded:true,loading:false,error:"Etsy check unavailable",row:null};
+ }catch(e){etsySnap={loaded:true,loading:false,error:"Could not reach Etsy check",row:null}}
+ if(tab==="home")render();
+}
 function pulseCard(){
  const when=d=>{try{return new Date(d).toLocaleString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}catch(e){return ""}};
  const pub=postStatus.rows.filter(r=>r.status==="published");
@@ -668,7 +680,10 @@ function pulseCard(){
  let orders="";
  if(biz==="wb"){const o=orderSnap.row;
   orders=!orderSnap.loaded?"Checking…":orderSnap.error?esc(orderSnap.error):!o?"Order check hasn't run yet.":!o.ok?`⚠ Last order check failed (${esc(when(o.checked_at))}).`:(Date.now()-Date.parse(o.checked_at)>36*36e5)?`⚠ Order check is out of date (last ${esc(when(o.checked_at))}).`:`${o.order_count} order${o.order_count===1?"":"s"} total${Number.isFinite(o.orders_last_7_days)?` · ${o.orders_last_7_days} this week`:""}${o.newest_order_at?` · newest ${esc(when(o.newest_order_at))}`:""}`;}
- return `<div class="card"><div class="eyebrow">HQ PULSE · VERIFIED</div><p style="margin:8px 0 4px"><b>Last post:</b> ${post}</p>${biz==="wb"?`<p style="margin:4px 0"><b>Store orders:</b> ${orders}</p><p class="hint">Orders read directly from Fourthwall three times a day. Counts only.</p>`:""}<div class="actionrow"><button data-a="tab|marketing">Post details</button></div></div>`;
+ let etsy="";
+ if(biz==="wb"){const e=etsySnap.row;
+  etsy=!etsySnap.loaded?"Checking…":etsySnap.error?esc(etsySnap.error):!e?"Etsy check hasn't run yet.":!e.ok?`⚠ Last Etsy check failed (${esc(when(e.checked_at))}).`:(Date.now()-Date.parse(e.checked_at)>36*36e5)?`⚠ Etsy check is out of date (last ${esc(when(e.checked_at))}).`:`${Number.isFinite(e.active_listings)?`${e.active_listings} active listing${e.active_listings===1?"":"s"} · `:""}${e.order_count} order${e.order_count===1?"":"s"} total${Number.isFinite(e.orders_last_7_days)?` · ${e.orders_last_7_days} this week`:""}${e.newest_order_at?` · newest ${esc(when(e.newest_order_at))}`:""}`;}
+ return `<div class="card"><div class="eyebrow">HQ PULSE · VERIFIED</div><p style="margin:8px 0 4px"><b>Last post:</b> ${post}</p>${biz==="wb"?`<p style="margin:4px 0"><b>Store orders:</b> ${orders}</p><p style="margin:4px 0"><b>Etsy shop:</b> ${etsy}</p><p class="hint">Live counts read directly from Fourthwall and Etsy three times a day. Read-only; counts only.</p>`:""}<div class="actionrow"><button data-a="tab|marketing">Post details</button></div></div>`;
 }
 function marketing(isDemo=false){
  const b=CAMPAIGNS[biz]||CAMPAIGNS.wb;
