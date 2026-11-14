@@ -520,6 +520,22 @@ function freeDeskSlot() {
 const isEtsyLaser = (row) => /\.svg$/i.test(row.file_name || '') || /\b(etsy|laser)\b/i.test(row.goal || '');
 const SHELF_SLOTS = 9;   // 3 shelves × 3 papers
 const etsyShelf = { g: null, label: null };
+// Coloring-book pages waiting for approval stack on the Book Stand, two piles (left / right page).
+const bookStand = { top: null, label: null };
+const BOOK_SLOTS = 12;
+function freeBookSlot() {
+  const used = new Set(docs.filter((d) => d.userData.bookSlot != null).map((d) => d.userData.bookSlot));
+  for (let k = 0; k < BOOK_SLOTS; k++) if (!used.has(k)) return k;
+  return null;
+}
+function drawBookLabel(c, w, h) {
+  if (!c) { if (bookStand.label) repaint(bookStand.label.userData.tex, drawBookLabel); return; }
+  panelBg(c, w, h, { radius: 0.18 });
+  c.textAlign = 'center'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.3}px ${SERIF}`; c.fillText('BOOK STAND · WAITING FOR REVIEW', w / 2, h * 0.42);
+  c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.19}px ${SANS}`;
+  const n = docs.filter((d) => d.userData.bookSlot != null && !d.userData.doc.state).length;
+  c.fillText(!live.ok ? 'Sign this headset in to load your book pages' : n ? `${n} page${n === 1 ? '' : 's'} · grab one, drop it in Completed or Revised` : 'Nothing waiting · coloring-book pages from the team land here', w / 2, h * 0.78);
+}
 function drawShelfLabel(c, w, h) {
   if (!c) { if (etsyShelf.label) repaint(etsyShelf.label.userData.tex, drawShelfLabel); return; }
   panelBg(c, w, h, { radius: 0.18 });
@@ -544,6 +560,15 @@ function homeFor(g) {
     return { p: new THREE.Vector3(x, BOARD_T.y + 0.005 + n * 0.0006, z), q: new THREE.Quaternion().setFromEuler(new THREE.Euler(-PI / 2, 0, -D.spec.ang)) };
   }
   u.atDirector = null;
+  if (bookStand.top && u.doc.row.line === 'book') {
+    u.slot = u.shelfSlot = null;
+    if (u.bookSlot == null) u.bookSlot = freeBookSlot();
+    const k = u.bookSlot ?? BOOK_SLOTS - 1, layer = Math.floor(k / 2);
+    const lp = new THREE.Vector3(k % 2 ? 0.125 : -0.125, 0.016 + layer * 0.0035, 0);
+    bookStand.top.updateMatrixWorld(true);
+    return { p: bookStand.top.localToWorld(lp), q: bookStand.top.getWorldQuaternion(new THREE.Quaternion()).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-PI / 2, k % 2 ? -0.04 : 0.04, 0))) };
+  }
+  u.bookSlot = null;
   if (etsyShelf.g && isEtsyLaser(u.doc.row)) {
     u.slot = null;
     if (u.shelfSlot == null) u.shelfSlot = freeShelfSlot();
@@ -997,7 +1022,7 @@ function intoTray(obj, t) {
   }
 }
 function toDirector(obj, D) {
-  if (obj.userData.kind === 'doc' && obj.userData.doc.row.designId) { goHome(obj); showToast('Etsy designs go in a box', 'Drop it in Completed to approve or Revised to send it back with a note.', false); return; }
+  if (obj.userData.kind === 'doc' && obj.userData.doc.row.designId) { goHome(obj); showToast('Drop-box files go in a box', 'Drop it in Completed to approve or Revised to send it back with a note.', false); return; }
   if (obj.userData.kind === 'proof') { goHome(obj); showToast('Shirts go in a box', 'Drop it in Completed to approve or Revised to send it back.', false); return; }
   setCrumpled(obj, false); obj.scale.setScalar(1); D.nod = 1;
   const code = CODE_OF[D.spec.name];
@@ -1015,7 +1040,7 @@ function toDirector(obj, D) {
   }
 }
 function intoTrash(obj) {
-  if (obj.userData.kind === 'doc' && obj.userData.doc.row.designId) { goHome(obj); showToast('Etsy designs go in a box', 'Drop it in Revised and say what to fix — every version is kept.', false); return; }
+  if (obj.userData.kind === 'doc' && obj.userData.doc.row.designId) { goHome(obj); showToast('Drop-box files go in a box', 'Drop it in Revised and say what to fix — every version is kept.', false); return; }
   if (obj.userData.kind === 'proof') { trash.swish++; trash.flash = 1.5; repaint(trashLabel.userData.tex, drawTrashLabel); const d = obj.userData.decided; removeProof(obj); if (!d) refreshProof(); showToast('Swish!', 'Shirt mockup tossed — nothing saved.', false); return; }
   setCrumpled(obj, true); obj.visible = false; obj.userData.fly = null;
   trash.items.push(obj); trash.swish++; trash.flash = 1.5; repaint(trashLabel.userData.tex, drawTrashLabel);
@@ -1486,7 +1511,7 @@ function buildStations() {
     const g = stationGroup(STATIONS[2]);
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 1.0, 16), MAT.gold); post.position.set(0, 0.5, -0.95); g.add(post);
     const base = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.24, 0.03, 32), MAT.leather); base.position.set(0, 0.015, -0.95); g.add(base);
-    const top = new THREE.Group(); top.position.set(0, 1.04, -0.95); top.rotation.x = 0.55; g.add(top);
+    const top = new THREE.Group(); top.position.set(0, 1.04, -0.95); top.rotation.x = 0.55; g.add(top); bookStand.top = top;
     box(0.56, 0.02, 0.38, MAT.leather, 0, 0, 0, top);
     box(0.57, 0.006, 0.012, MAT.gold, 0, 0.013, 0.19, top);
     const page = (left) => labelPlane(0.24, 0.32, (c, w, h) => {
@@ -1496,7 +1521,8 @@ function buildStations() {
     }, { px: 2200, transparent: false });
     const Lp = page(true), Rp = page(false);
     for (const [pg, x, ry] of [[Lp, -0.125, 0.04], [Rp, 0.125, -0.04]]) { decal(pg.material); pg.rotation.set(-PI / 2, ry, 0); pg.position.set(x, 0.012, 0); top.add(pg); }
-    infoCard(g, 0.8, 0.3, 'Book Stand', ['Your book pages load here once the page images are in Business HQ storage.'], 0, 1.62, -1.3, -0.1);
+    bookStand.label = labelPlane(0.84, 0.17, drawBookLabel, { px: 2000 });
+    bookStand.label.position.set(0, 1.62, -1.3); bookStand.label.rotation.x = -0.1; g.add(bookStand.label);
     stationTray('revise', g, -0.62, -0.72);
     stationTray('approve', g, 0.62, -0.72);
   }
@@ -1945,15 +1971,18 @@ async function newNote(text) {
 }
 const docKey = (r) => [r.goal, r.result, r.next_recipient, r.file_name, r.status].join('|');
 const designRow = (d) => ({
-  id: `design:${d.id}`, designId: d.id, business: 'wb', worker: CODE_OF[d.made_by] || 'owner', next_recipient: null,
-  goal: `Etsy design: ${d.title}`, file_name: d.file_name, file_path: d.file_path, file_type: d.file_type, created_at: d.uploaded_at, status: 'ready_for_review', decision: null,
-  result: `New from the drop box (${String(d.file_type).toUpperCase()}). Completed = your OK to list it; HQ never lists anything on Etsy. Revised = say what to fix.`,
+  id: `design:${d.id}`, designId: d.id, line: d.line || 'etsy', business: d.line === 'book' ? 'fb' : 'wb', worker: CODE_OF[d.made_by] || 'owner', next_recipient: null,
+  goal: d.line === 'book' ? `Book page: ${d.title}` : `Etsy design: ${d.title}`, file_name: d.file_name, file_path: d.file_path, file_type: d.file_type, created_at: d.uploaded_at, status: 'ready_for_review', decision: null,
+  result: d.line === 'book'
+    ? `New coloring-book page from the drop box${d.book_title ? ` for ${d.book_title}` : ''}. Completed = your OK; HQ never uploads anything to KDP. Revised = say what to fix.`
+    : `New from the drop box (${String(d.file_type).toUpperCase()}). Completed = your OK to list it; HQ never lists anything on Etsy. Revised = say what to fix.`,
 });
 async function syncDocs() {
   const rows = await rest('/rest/v1/hq_ai_handoffs?select=id,business,worker,goal,result,status,next_recipient,file_name,created_at,decision,decision_note,decided_at&decision=is.null&status=in.(draft,ready_for_review)&order=created_at.desc&limit=20');
   // Etsy files waiting in the drop-box approval queue go on the Etsy shelf too.
   const waiting = (await rest('/rest/v1/hq_etsy_designs?select=id,title,file_path,file_name,file_type,made_by,uploaded_at&business_id=eq.wb&line=eq.etsy&status=eq.pending&order=uploaded_at.asc&limit=9').catch(() => [])) || [];
-  rows.push(...waiting.map(designRow));
+  const pages = (await rest('/rest/v1/hq_etsy_designs?select=id,line,title,book_title,page_no,file_path,file_name,file_type,made_by,uploaded_at&business_id=eq.fb&line=eq.book&status=eq.pending&order=book_title.asc,page_no.asc.nullslast,uploaded_at.asc&limit=12').catch(() => [])) || [];
+  rows.push(...waiting.map(designRow), ...pages.map(designRow));
   const ids = new Set(rows.map((r) => r.id));
   for (const g of [...docs]) {
     const u = g.userData, busy = u.heldBy || u.fly || u.glide || u.doc.state || !g.visible;
@@ -1969,8 +1998,8 @@ async function syncDocs() {
     repaint(g.userData.paper.userData.tex, drawDoc(g.userData.doc));
     if (moved && !g.userData.fly && !g.userData.glide) { g.userData.home = homeFor(g); goHome(g); }
   }
-  live.onDesk = docs.filter((d) => d.visible && !d.userData.doc.state && !d.userData.atDirector && d.userData.shelfSlot == null).length;
-  drawShelfLabel();
+  live.onDesk = docs.filter((d) => d.visible && !d.userData.doc.state && !d.userData.atDirector && d.userData.shelfSlot == null && d.userData.bookSlot == null).length;
+  drawShelfLabel(); drawBookLabel();
   live.withCrew = docs.filter((d) => d.visible && d.userData.atDirector).length;
 }
 async function syncNotes() {
