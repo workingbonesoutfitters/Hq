@@ -46,11 +46,11 @@ const BOXES={etsy:{name:"Etsy designs",sub:"Working Bones · Etsy laser and vect
  book:{name:"Coloring book",sub:"Funny Bones Kids · coloring-book pages for owner approval. They also show up on the owner's VR Book Stand.",exts:["png","jpg","jpeg","pdf"],bad:"use a PNG or JPG page (PDF for the full interior or cover).",fileLabel:"Pages: PNG or JPG, one file per page (PDF for a full interior or cover)",accept:".png,.jpg,.jpeg,.pdf",ph:"Bandit meets a moon cow",folder:"books/",biz:"fb",what:"coloring-book pages"}};
 const qBox=new URLSearchParams(location.search).get("box")||"";
 let box=/^shirts?$/.test(qBox)?"shirt":/^books?$/.test(qBox)?"book":"etsy";
-let lastBook=LS.get("hq_drop_book")||"";
 const TYPES=ext=>BOXES[box].exts.includes(ext)?ALL_TYPES[ext]:null;
 const LS={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
 const $=s=>document.querySelector(s),esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let S=null;try{S=JSON.parse(LS.get("hq_drop_sess"))}catch(e){}
+let lastBook=LS.get("hq_drop_book")||"";
 let me=null,rows=[],msg="",msgCls="",busy=false,lastEm=LS.get("hq_drop_em")||"";
 const uid=()=>{try{return JSON.parse(atob(S.at.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))).sub}catch(e){return ""}};
 const when=d=>{try{return new Date(d).toLocaleString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}catch(e){return ""}};
