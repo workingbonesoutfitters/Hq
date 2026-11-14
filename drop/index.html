@@ -25,6 +25,7 @@ button:disabled{opacity:.5}
 .item{border-top:1px solid #222;padding:10px 0}.item:first-child{border-top:0}
 .chip{display:inline-block;font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px;border:1px solid #444;margin-left:6px}
 .pending{color:var(--gold2);border-color:var(--gold)}.approved{color:var(--ok);border-color:var(--ok)}.revise{color:var(--bad);border-color:var(--bad)}
+.seg{display:flex;gap:8px;margin:0 0 14px}.seg button{margin:0;min-height:44px;font-size:15px}
 .note{background:#2a1714;border:1px solid #6b2f25;border-radius:10px;padding:8px 10px;margin-top:6px;color:#ffd9cf;font-size:14px}
 small{color:var(--muted)}
 </style>
@@ -32,13 +33,18 @@ small{color:var(--muted)}
 <body>
 <main>
 <h1>Design drop box</h1>
-<p>Working Bones · Etsy designs for owner approval. This page can only add files and show your own uploads. It cannot approve, list, edit or delete anything.</p>
+<p id="sub"></p>
 <div id="app"></div>
 </main>
 <script>
 "use strict";
 const U="https://whvgwshdppluudzkhcqp.supabase.co",K="sb_publishable_NBCZbtnprQY7ffHOeTe4kQ_PCBF9skl",BUCKET="etsy-designs";
-const TYPES={svg:"image/svg+xml",pdf:"application/pdf",png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",dxf:"application/dxf"};
+const ALL_TYPES={svg:"image/svg+xml",pdf:"application/pdf",png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",dxf:"application/dxf"};
+// Two drop boxes, one approval queue: Etsy laser/vector files, and shirt designs for Working Bones Clothes.
+const BOXES={etsy:{name:"Etsy designs",sub:"Working Bones · Etsy laser and vector files for owner approval.",exts:["svg","pdf","png","jpg","jpeg","dxf"],bad:"use SVG, PDF, PNG, JPG or DXF.",fileLabel:"Files: SVG, DXF, PDF, PNG preview (select several at once)",accept:".svg,.pdf,.png,.jpg,.jpeg,.dxf",ph:"Grumpy Skull Coaster v1",folder:""},
+ shirt:{name:"Shirt designs",sub:"Working Bones Clothes · shirt print files for owner approval. They also show up in the owner's VR Apparel Corner.",exts:["png","jpg","jpeg"],bad:"use a PNG or JPG print file (transparent PNG is best).",fileLabel:"Print file: PNG or JPG, at least 3000 px tall if you can",accept:".png,.jpg,.jpeg",ph:"Built for the Working Dead tee v1",folder:"shirts/"}};
+let box=/^shirts?$/.test(new URLSearchParams(location.search).get("box")||"")?"shirt":"etsy";
+const TYPES=ext=>BOXES[box].exts.includes(ext)?ALL_TYPES[ext]:null;
 const LS={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
 const $=s=>document.querySelector(s),esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let S=null;try{S=JSON.parse(LS.get("hq_drop_sess"))}catch(e){}
@@ -79,24 +85,24 @@ async function boot(){
  render();
 }
 async function loadRows(){
- const r=await api("/rest/v1/hq_etsy_designs?select=title,file_name,file_type,status,revision_note,uploaded_at,decided_at&order=uploaded_at.desc&limit=60");
+ const r=await api("/rest/v1/hq_etsy_designs?select=title,file_name,file_type,status,revision_note,uploaded_at,decided_at&line=eq."+box+"&order=uploaded_at.desc&limit=60");
  rows=r.ok&&Array.isArray(r.j)?r.j:[];
 }
 async function upload(){
  const files=[...($("#file").files||[])],title=$("#title").value.trim();
  if(!title){msg="Give the design a name first.";msgCls="bad";return render()}
  if(!files.length){msg="Choose at least one file.";msgCls="bad";return render()}
- for(const f of files){const ext=(f.name.split(".").pop()||"").toLowerCase();if(!TYPES[ext]){msg=`${f.name}: use SVG, PDF, PNG, JPG or DXF.`;msgCls="bad";return render()}if(f.size>25*1024*1024){msg=`${f.name} is over 25 MB.`;msgCls="bad";return render()}}
+ for(const f of files){const ext=(f.name.split(".").pop()||"").toLowerCase();if(!TYPES(ext)){msg=`${f.name}: ${BOXES[box].bad}`;msgCls="bad";return render()}if(f.size>25*1024*1024){msg=`${f.name} is over 25 MB.`;msgCls="bad";return render()}}
  busy=true;msg=`Uploading ${files.length} file${files.length>1?"s":""}…`;msgCls="";render();
  let done=0;const fails=[];
  for(const f of files){
-  const ext=f.name.split(".").pop().toLowerCase(),type=TYPES[ext];
+  const ext=f.name.split(".").pop().toLowerCase(),type=TYPES(ext);
   const safe=f.name.toLowerCase().replace(/[^a-z0-9._-]+/g,"-").replace(/-+/g,"-").slice(-80);
-  const path=`wb/up/${uid()}/${new Date().toISOString().slice(0,10)}-${crypto.randomUUID()}-${safe}`;
+  const path=`wb/up/${uid()}/${BOXES[box].folder}${new Date().toISOString().slice(0,10)}-${crypto.randomUUID()}-${safe}`;
   const up=await api("/storage/v1/object/"+BUCKET+"/"+path.split("/").map(encodeURIComponent).join("/"),{method:"POST",headers:{"Content-Type":type,"x-upsert":"false"},body:f});
   if(!up.ok){fails.push(`${f.name} (upload ${up.status})`);continue}
   const name=files.length>1?`${title} · ${ext.toUpperCase()}`:title;
-  const ins=await api("/rest/v1/hq_etsy_designs",{method:"POST",headers:{"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({business_id:"wb",title:name.slice(0,120),file_path:path,file_name:f.name.slice(0,200),file_type:ext,made_by:me.label,uploaded_by:uid()})});
+  const ins=await api("/rest/v1/hq_etsy_designs",{method:"POST",headers:{"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({business_id:"wb",line:box,title:name.slice(0,120),file_path:path,file_name:f.name.slice(0,200),file_type:ext,made_by:me.label,uploaded_by:uid()})});
   if(!ins.ok){fails.push(`${f.name} (list ${ins.status})`);continue}
   done++;
  }
@@ -106,20 +112,24 @@ async function upload(){
  await loadRows();render();
 }
 function render(){
+ const B=BOXES[box];document.title=B.name+" drop box · Business HQ";
+ $("#sub").textContent=B.sub+" This page can only add files and show your own uploads. It cannot approve, list, edit or delete anything.";
  const a=$("#app"),m=msg?`<div class="msg ${msgCls}">${esc(msg)}</div>`:"";
  if(!S){a.innerHTML=`<div class="card"><b>Sign in</b><label for="em">Email</label><input id="em" type="email" autocomplete="username" value="${esc(lastEm)}"><label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password"><button data-a="in" ${busy?"disabled":""}>${busy?"Signing in…":"Sign in"}</button>${m}</div>`;return}
  if(me===null){a.innerHTML=`<div class="card"><p>Checking your access…</p></div>`;return}
  if(me===false){a.innerHTML=`<div class="card"><b>This account can't use the drop box.</b><p>It isn't set up as an uploader. The owner uses Business HQ instead.</p><button class="ghost" data-a="out">Sign out</button></div>`;return}
  const st={pending:"Waiting for owner",approved:"Approved",revise:"Needs changes"};
  const list=rows.length?rows.map(r=>`<div class="item"><b>${esc(r.title)}</b><span class="chip ${esc(r.status)}">${esc(st[r.status]||r.status)}</span><br><small>${esc(r.file_name)} · sent ${esc(when(r.uploaded_at))}${r.decided_at?` · decided ${esc(when(r.decided_at))}`:""}</small>${r.status==="revise"&&r.revision_note?`<div class="note"><b>What to fix:</b> ${esc(r.revision_note)}</div>`:""}</div>`).join(""):`<p>No uploads yet.</p>`;
- a.innerHTML=`<div class="card"><b>Send a design for approval</b><small style="display:block;margin-top:2px">Signed in as ${esc(me.label)} (${esc(S.em||"")})</small>
- <label for="title">Design name</label><input id="title" maxlength="100" placeholder="Grumpy Skull Coaster v1">
- <label for="file">Files: SVG, DXF, PDF, PNG preview (select several at once)</label><input id="file" type="file" multiple accept=".svg,.pdf,.png,.jpg,.jpeg,.dxf">
+ const seg=`<div class="seg">${Object.entries(BOXES).map(([k,v])=>`<button class="${k===box?"":"ghost"}" data-a="box|${k}" aria-pressed="${k===box}">${esc(v.name)}</button>`).join("")}</div>`;
+ a.innerHTML=`${seg}<div class="card"><b>Send ${box==="shirt"?"a shirt design":"an Etsy design"} for approval</b><small style="display:block;margin-top:2px">Signed in as ${esc(me.label)} (${esc(S.em||"")})</small>
+ <label for="title">Design name</label><input id="title" maxlength="100" placeholder="${esc(B.ph)}">
+ <label for="file">${esc(B.fileLabel)}</label><input id="file" type="file" multiple accept="${B.accept}">
  <button data-a="up" ${busy?"disabled":""}>${busy?"Working…":"Send for approval"}</button>${m}</div>
- <div class="card"><h2 style="margin-top:0">Your uploads</h2>${list}<button class="ghost" data-a="reload">Refresh</button></div>
+ <div class="card"><h2 style="margin-top:0">Your ${box==="shirt"?"shirt":"Etsy"} uploads</h2>${list}<button class="ghost" data-a="reload">Refresh</button></div>
  <button class="ghost" data-a="out">Sign out</button>`;
 }
 document.addEventListener("click",async e=>{const b=e.target.closest("[data-a]");if(!b||busy)return;const x=b.dataset.a;
+ if(x.startsWith("box|")){const k=x.slice(4);if(!BOXES[k]||k===box)return;box=k;try{history.replaceState(null,"",k==="shirt"?"?box=shirts":location.pathname)}catch(e){}msg="";rows=[];render();if(me)await loadRows();render();return}
  if(x==="in")await signIn();else if(x==="up")await upload();else if(x==="out")signOut();else if(x==="reload"){await loadRows();msg="";render()}});
 document.addEventListener("keydown",e=>{if(e.key==="Enter"&&!S&&(e.target.id==="pw"||e.target.id==="em"))signIn()});
 boot();

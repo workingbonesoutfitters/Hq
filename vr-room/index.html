@@ -467,7 +467,12 @@ function drawDoc(doc) {
     let y = wrap(c, doc.title, w * 0.07, h * 0.255, w * 0.86, h * 0.074, 3);
     c.fillStyle = '#6b6457'; c.font = `500 ${h * 0.034}px ${SANS}`; c.fillText(`From ${doc.from}  →  for ${doc.to}`, w * 0.07, y + h * 0.005);
     c.fillStyle = '#3a342a'; c.font = `500 ${h * 0.033}px ${SANS}`;
-    wrap(c, doc.summary || '(no summary yet)', w * 0.07, y + h * 0.075, w * 0.86, h * 0.043, doc.file ? 6 : 8);
+    if (doc.img) {
+      const top = y + h * 0.04, bh = h * 0.84 - top, bw = w * 0.86;
+      const s = Math.min(bw / (doc.img.naturalWidth || bw), bh / (doc.img.naturalHeight || bh)), dw = (doc.img.naturalWidth || bw) * s, dh = (doc.img.naturalHeight || bh) * s;
+      c.fillStyle = '#ffffff'; c.fillRect(w * 0.07, top, bw, bh);
+      try { c.drawImage(doc.img, (w - dw) / 2, top + (bh - dh) / 2, dw, dh); } catch (e) {}
+    } else wrap(c, doc.summary || '(no summary yet)', w * 0.07, y + h * 0.075, w * 0.86, h * 0.043, doc.file ? 6 : 8);
     if (doc.file) { c.fillStyle = '#9c7a2c'; c.font = `600 ${h * 0.03}px ${SANS}`; c.fillText('📎 ' + doc.file.slice(0, 44), w * 0.07, h * 0.89); }
     c.fillStyle = '#8a8172'; c.font = `600 ${h * 0.026}px ${SANS}`; c.fillText(`LIVE · BUSINESS HQ · ${doc.when}`, w * 0.07, h * 0.95);
     if (doc.state) {
@@ -560,7 +565,21 @@ function makeDoc(row) {
   equipSheet(g, 0.2, 0.26, MAT.paperBall);
   docs.push(g);
   g.userData.home = homeFor(g); g.position.copy(g.userData.home.p); g.quaternion.copy(g.userData.home.q);
-  scene.add(g); register(paper, 'doc', g); return g;
+  scene.add(g); register(paper, 'doc', g);
+  if (row.designId && /^(svg|png|jpe?g)$/.test(row.file_type || '')) loadDocPreview(g);
+  return g;
+}
+// Shows the actual artwork on a drop-box design paper (SVG, PNG or JPG).
+async function loadDocPreview(g) {
+  const row = g.userData.doc.row;
+  try {
+    const blob = await fetchObject(`etsy-designs/${row.file_path}`);
+    const url = URL.createObjectURL(blob.type ? blob : new Blob([blob], { type: row.file_type === 'svg' ? 'image/svg+xml' : 'image/png' }));
+    const img = new Image();
+    img.onload = () => { g.userData.doc.img = img; repaint(g.userData.paper.userData.tex, drawDoc(g.userData.doc)); setTimeout(() => URL.revokeObjectURL(url), 1000); };
+    img.onerror = () => URL.revokeObjectURL(url);
+    img.src = url;
+  } catch (e) {}
 }
 function removeSheet(g) {
   for (let i = hitables.length - 1; i >= 0; i--) if (hitables[i].userData.owner === g) hitables.splice(i, 1);
@@ -973,11 +992,12 @@ function intoTray(obj, t) {
     showToast(`Approved: ${title}`, 'Saved to Business HQ. Approves the work only — nothing is published.');
   } else {
     saveHandoff(obj, { decision: 'revise', status: 'draft', decided_at: now, decision_note: null });
-    pendingNote = { id: row.id, since: now, title };
+    pendingNote = { id: row.id, since: now, title, designId: row.designId || null, designOnly: !!row.designId };
     showToast(`Sent back: ${title}`, 'Say why in the boardroom — your next sentence is saved as the note.');
   }
 }
 function toDirector(obj, D) {
+  if (obj.userData.kind === 'doc' && obj.userData.doc.row.designId) { goHome(obj); showToast('Etsy designs go in a box', 'Drop it in Completed to approve or Revised to send it back with a note.', false); return; }
   if (obj.userData.kind === 'proof') { goHome(obj); showToast('Shirts go in a box', 'Drop it in Completed to approve or Revised to send it back.', false); return; }
   setCrumpled(obj, false); obj.scale.setScalar(1); D.nod = 1;
   const code = CODE_OF[D.spec.name];
@@ -995,6 +1015,7 @@ function toDirector(obj, D) {
   }
 }
 function intoTrash(obj) {
+  if (obj.userData.kind === 'doc' && obj.userData.doc.row.designId) { goHome(obj); showToast('Etsy designs go in a box', 'Drop it in Revised and say what to fix — every version is kept.', false); return; }
   if (obj.userData.kind === 'proof') { trash.swish++; trash.flash = 1.5; repaint(trashLabel.userData.tex, drawTrashLabel); const d = obj.userData.decided; removeProof(obj); if (!d) refreshProof(); showToast('Swish!', 'Shirt mockup tossed — nothing saved.', false); return; }
   setCrumpled(obj, true); obj.visible = false; obj.userData.fly = null;
   trash.items.push(obj); trash.swish++; trash.flash = 1.5; repaint(trashLabel.userData.tex, drawTrashLabel);
@@ -1013,6 +1034,12 @@ function restoreTrash() {
 function undoLast() {
   const a = lastAction; lastAction = null; hideToast(); if (!a) return;
   if (a.proofRow !== undefined) {
+    if (a.pend) {
+      designWaitingNote.delete(a.pend.id);
+      rest(`/rest/v1/hq_etsy_designs?id=eq.${a.pend.id}`, { method: 'PATCH', body: { status: 'pending', revision_note: null }, prefer: 'return=minimal' }).catch(() => {});
+      if (a.libName) rest(`/storage/v1/object/hq-documents/wb/designs/${encodeURIComponent(a.libName)}`, { method: 'DELETE' }).catch(() => {});
+      setTimeout(() => loadDesigns().catch(() => {}), 800);
+    }
     if (a.proofRow) { if (pendingNote && pendingNote.id === a.proofRow) pendingNote = null; rest(`/rest/v1/hq_ai_handoffs?id=eq.${a.proofRow}`, { method: 'DELETE', prefer: 'return=minimal' }).then(() => refreshCounts().then(drawAll)).catch(() => showToast("Couldn't undo", 'Check the connection.', false)); }
     const t = trays.find((x) => x.contains(a.obj.getWorldPosition(V()))); if (t) t.count = Math.max(0, t.count - 1);
     removeProof(a.obj); if (apparel.proof) removeProof(apparel.proof); refreshProof(); return;
@@ -1120,6 +1147,22 @@ function profileR(y) {
   return 0;
 }
 let binderPanel, shirtLabel;
+const designWaitingNote = new Set();   // shirt designs sent to Revised, waiting for your spoken note
+// Approving a waiting shirt design: record it in Business HQ, then keep a copy in the Design Library.
+async function patchDesign(id, body) {
+  await rest(`/rest/v1/hq_etsy_designs?id=eq.${id}&status=eq.pending`, { method: 'PATCH', body, prefer: 'return=minimal' });
+}
+async function copyToLibrary(pending) {
+  const blob = await fetchObject(`etsy-designs/${pending.file_path}`);
+  const ext = pending.file_type === 'png' ? 'png' : 'jpg';
+  const base = String(pending.title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'design';
+  const s = session(), { U, K } = conf();
+  for (const name of [`${base}.${ext}`, `${base}-${pending.id.slice(0, 6)}.${ext}`]) {
+    const r = await fetch(`${U}/storage/v1/object/hq-documents/wb/designs/${encodeURIComponent(name)}`, { method: 'POST', headers: { apikey: K, Authorization: 'Bearer ' + s.at, 'Content-Type': ext === 'png' ? 'image/png' : 'image/jpeg', 'x-upsert': 'false' }, body: blob });
+    if (r.ok) return name;
+  }
+  return null;
+}
 function buildApparel(g) {
   // pedestal + shirt form
   const base = new THREE.Group(); base.position.set(0.3, 0, -1.35); g.add(base);
@@ -1191,14 +1234,15 @@ function drawBinder(c, w, h) {
   c.strokeStyle = '#c9a24a'; c.lineWidth = 4; c.strokeRect(6, 6, w - 12, h - 12);
   c.textAlign = 'left'; c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.07}px ${SERIF}`; c.fillText('Design Binder', w * 0.04, h * 0.1);
   c.textAlign = 'right'; c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.04}px ${SANS}`;
-  c.fillText(apparel.cards.length ? `${apparel.cards.length} designs · page ${apparel.page + 1} of ${pageCount()}` : '', w * 0.96, h * 0.1);
+  const nw = apparel.cards.filter((g) => g.userData.design.pending).length;
+  c.fillText(apparel.cards.length ? `${nw ? `${nw} waiting for you · ` : ''}${apparel.cards.length} designs · page ${apparel.page + 1} of ${pageCount()}` : '', w * 0.96, h * 0.1);
   if (!apparel.cards.length) {
     c.textAlign = 'center'; c.fillStyle = '#e8dfc8'; c.font = `500 ${h * 0.05}px ${SANS}`;
     c.fillText(live.ok ? 'No designs yet.' : 'Sign this headset in to load your designs.', w / 2, h * 0.42);
     c.fillStyle = '#c9bea4'; c.font = `500 ${h * 0.042}px ${SANS}`;
     c.fillText('Add them on your phone:', w / 2, h * 0.52); c.fillStyle = '#e6c878'; c.fillText('workingbonesoutfitters.github.io/Hq/designs', w / 2, h * 0.6);
   }
-  c.textAlign = 'center'; c.fillStyle = '#8f887a'; c.font = `500 ${h * 0.035}px ${SANS}`; c.fillText('Grab a design · drop it on the shirt · grab the shirt to spin it', w / 2, h * 0.97);
+  c.textAlign = 'center'; c.fillStyle = '#8f887a'; c.font = `500 ${h * 0.035}px ${SANS}`; c.fillText(nw ? 'Gold cards are new · put one on the shirt, then drop the shirt in Completed or Revised' : 'Grab a design · drop it on the shirt · grab the shirt to spin it', w / 2, h * 0.97);
 }
 function drawShirtLabel(c, w, h) {
   if (!c) { if (shirtLabel) repaint(shirtLabel.userData.tex, drawShirtLabel); refreshProof(); return; }
@@ -1279,21 +1323,31 @@ function removeProof(g) {
 // Approve / send back a shirt: saved to Business HQ as a decided handoff with the exact setup.
 async function decideProof(obj, t) {
   const cfg = obj.userData.cfg, approve = t.kind === 'approve', now = new Date().toISOString();
-  const title = `Shirt mockup: ${cfg.label} on ${cfg.colorName} tee (${cfg.side})`;
+  const pend = cfg.design.pending;
+  const title = `${pend ? 'Shirt design' : 'Shirt mockup'}: ${cfg.label} on ${cfg.colorName} tee (${cfg.side})`;
   if (apparel.proof === obj) { apparel.proof = null; refreshProof(); }   // a fresh shirt goes back on the hanger
   obj.userData.decided = true;
   const body = {
     business: 'wb', worker: 'claude', goal: title,
-    result: `Set up by Michael in the VR Apparel Corner. Design file: ${cfg.name}. Shirt colour: ${cfg.colorName} (${cfg.color}). ${cfg.side === 'front' ? 'Front' : 'Back'} print, about ${Math.round(cfg.size * 100)} cm tall. ${approve ? 'Approves this mockup only — nothing is published, listed or ordered.' : 'Sent back for revision.'}`,
-    status: approve ? 'reviewed' : 'draft', file_name: cfg.name.slice(0, 200), file_path: `wb/designs/${cfg.name}`.slice(0, 300),
+    result: `Set up by Michael in the VR Apparel Corner. ${pend ? `Design from the drop box by ${pend.made_by}: ${pend.title} (${pend.file_name}).` : `Design file: ${cfg.name}.`} Shirt colour: ${cfg.colorName} (${cfg.color}). ${cfg.side === 'front' ? 'Front' : 'Back'} print, about ${Math.round(cfg.size * 100)} cm tall. ${approve ? 'Approves this mockup only — nothing is published, listed or ordered.' : 'Sent back for revision.'}`,
+    status: approve ? 'reviewed' : 'draft', file_name: (pend ? pend.file_name : cfg.name).slice(0, 200), file_path: (pend ? `etsy-designs/${pend.file_path}` : `wb/designs/${cfg.name}`).slice(0, 300),
     decision: approve ? 'approved' : 'revise', decided_at: now,
   };
   try {
     const rows = await rest('/rest/v1/hq_ai_handoffs', { method: 'POST', body, prefer: 'return=representation' });
     const row = rows && rows[0]; obj.userData.rowId = row && row.id;
-    lastAction = { obj, proofRow: obj.userData.rowId };
-    if (approve) showToast(`Approved: ${cfg.label} shirt`, 'Saved to Business HQ. Approves the mockup only — nothing is published.');
-    else { pendingNote = { id: row.id, since: now, title }; showToast(`Sent back: ${cfg.label} shirt`, 'Say why in the boardroom — your next sentence is saved as the note.'); }
+    lastAction = { obj, proofRow: obj.userData.rowId, pend: pend || null };
+    if (pend && approve) {
+      await patchDesign(pend.id, { status: 'approved' });
+      const lib = await copyToLibrary(pend).catch(() => null); lastAction.libName = lib;
+      showToast(`Approved: ${cfg.label}`, `Saved to Business HQ${lib ? ' and added to your Design Binder' : ''}. Nothing is published or ordered.`);
+      loadDesigns().catch(() => {});
+    } else if (approve) showToast(`Approved: ${cfg.label} shirt`, 'Saved to Business HQ. Approves the mockup only — nothing is published.');
+    else {
+      pendingNote = { id: row.id, since: now, title, designId: pend ? pend.id : null };
+      if (pend) { designWaitingNote.add(pend.id); loadDesigns().catch(() => {}); }
+      showToast(`Sent back: ${cfg.label}`, `Say why in the boardroom — your next sentence is saved as the note${pend ? ` for ${pend.made_by}` : ''}.`);
+    }
     refreshCounts().then(drawAll).catch(() => {});
   } catch (e) {
     t.count = Math.max(0, t.count - 1); removeProof(obj); refreshProof();
@@ -1323,38 +1377,53 @@ function makeDesignCard(d) {
     const s = Math.min((w * 0.9) / d.cv.width, (h * 0.8) / d.cv.height), dw = d.cv.width * s, dh = d.cv.height * s;
     c.drawImage(d.cv, (w - dw) / 2, h * 0.03, dw, dh);
     c.fillStyle = '#e6c878'; c.font = `600 ${h * 0.065}px ${SANS}`; c.textAlign = 'center'; c.fillText(d.label.slice(0, 26), w / 2, h * 0.95);
+    if (d.pending) {
+      c.fillStyle = '#c9a24a'; c.fillRect(0, 0, w, h * 0.1);
+      c.fillStyle = '#16120a'; c.font = `800 ${h * 0.055}px ${SANS}`; c.fillText(`WAITING FOR YOU · ${String(d.pending.made_by || '').toUpperCase()}`, w / 2, h * 0.07);
+      c.strokeStyle = '#e6c878'; c.lineWidth = w * 0.02; c.strokeRect(0, 0, w, h);
+    }
   }, { px: 2400, transparent: false, side: THREE.DoubleSide });
   decal(paper.material); g.add(paper); g.userData.paper = paper;
   equipSheet(g, 0.22, 0.22, MAT.paperBall);
   register(paper, 'design', g); scene.add(g);
-  apparel.cards.push(g); apparel.cards.sort((a, b) => a.userData.design.name.localeCompare(b.userData.design.name));
+  apparel.cards.push(g); apparel.cards.sort((a, b) => (!!b.userData.design.pending - !!a.userData.design.pending) || a.userData.design.name.localeCompare(b.userData.design.name));
   layoutCards(); drawBinder();
 }
-async function fetchDesign(name, retry = true) {
+const encPath = (p) => p.split('/').map(encodeURIComponent).join('/');
+async function fetchObject(bucketPath, retry = true) {
   const s = session(), { U, K } = conf();
-  const r = await fetch(`${U}/storage/v1/object/authenticated/hq-documents/wb/designs/${encodeURIComponent(name)}`, { headers: { apikey: K, Authorization: 'Bearer ' + s.at } });
-  if ((r.status === 401 || r.status === 403 || r.status === 400) && retry && await refreshSession()) return fetchDesign(name, false);
+  const r = await fetch(`${U}/storage/v1/object/authenticated/${encPath(bucketPath)}`, { headers: { apikey: K, Authorization: 'Bearer ' + s.at } });
+  if ((r.status === 401 || r.status === 403 || r.status === 400) && retry && await refreshSession()) return fetchObject(bucketPath, false);
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return r.blob();
 }
-async function loadDesign(name) {
+const fetchDesign = (name) => fetchObject(`hq-documents/wb/designs/${name}`);
+// pending = a shirt design from the drop box that is waiting for your decision (hq_etsy_designs, line 'shirt').
+async function loadDesign(name, pending) {
   try {
-    const bmp = await createImageBitmap(await fetchDesign(name));
+    const bmp = await createImageBitmap(await (pending ? fetchObject(`etsy-designs/${pending.file_path}`) : fetchDesign(name)));
     const sc = Math.min(1, 1024 / Math.max(bmp.width, bmp.height));
     const cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(bmp.width * sc)); cv.height = Math.max(1, Math.round(bmp.height * sc));
     cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height); if (bmp.close) bmp.close();
     const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = maxAniso;
-    makeDesignCard({ name, tex, cv, aspect: cv.width / cv.height, label: name.replace(/\.(png|jpe?g)$/i, '').replace(/[-_]+/g, ' ') });
+    const label = pending ? pending.title : name.replace(/\.(png|jpe?g)$/i, '').replace(/[-_]+/g, ' ');
+    makeDesignCard({ name, tex, cv, aspect: cv.width / cv.height, label, pending: pending || null });
   } catch (e) { apparel.names.delete(name); }
 }
 async function loadDesigns() {
   const list = (await rest('/storage/v1/object/list/hq-documents', { method: 'POST', body: { prefix: 'wb/designs', limit: 200, offset: 0, sortBy: { column: 'name', order: 'asc' } } }) || [])
     .filter((f) => f.name && /\.(png|jpe?g)$/i.test(f.name));
+  // Shirt designs dropped for approval (Bob's drop box or Business HQ): shown first in the binder, marked "waiting".
+  const waiting = ((await rest("/rest/v1/hq_etsy_designs?select=id,title,file_path,file_name,file_type,made_by,uploaded_at&business_id=eq.wb&line=eq.shirt&status=eq.pending&file_type=in.(png,jpg,jpeg)&order=uploaded_at.asc&limit=30").catch(() => [])) || [])
+    .filter((r) => !designWaitingNote.has(r.id));
+  live.shirtsWaiting = waiting.length;
+  const pendingByName = new Map(waiting.map((r) => [`pending:${r.id}`, r]));
+  for (const k of pendingByName.keys()) list.push({ name: k });
   const names = new Set(list.map((f) => f.name));
   for (const g of [...apparel.cards]) { const u = g.userData; if (!names.has(u.design.name) && !(u.heldBy || u.fly || u.glide)) { apparel.names.delete(u.design.name); if (apparel.current === u.design) { apparel.current = null; updateDecal(); } removeDesignCard(g); } }
   const todo = list.filter((f) => !apparel.names.has(f.name));
   todo.forEach((f) => apparel.names.add(f.name));
-  for (const f of todo) await loadDesign(f.name);
+  for (const f of todo) await loadDesign(f.name, pendingByName.get(f.name));
   layoutCards(); drawBinder(); drawShirtLabel();
 }
 
@@ -1839,10 +1908,19 @@ async function rest(path, { method = 'GET', body, prefer } = {}, retry = true) {
   if (!r.ok) throw new Error('HTTP ' + r.status);
   if (r.status === 204) return null; const t = await r.text(); return t ? JSON.parse(t) : null;
 }
+// Drop-box designs (hq_etsy_designs) ride along as papers: Completed = approved, Revised = waits for your
+// spoken note (a revision always needs one), putting it back = pending again.
+async function saveDesignDecision(row, patch) {
+  if (patch.decision === 'approved') await patchDesign(row.designId, { status: 'approved' });
+  else if (patch.decision === null) await rest(`/rest/v1/hq_etsy_designs?id=eq.${row.designId}`, { method: 'PATCH', body: { status: 'pending', revision_note: null }, prefer: 'return=minimal' });
+}
 async function saveHandoff(g, patch) {
   const row = g.userData.doc.row, before = { ...row };
   Object.assign(row, patch);
-  try { await rest(`/rest/v1/hq_ai_handoffs?id=eq.${row.id}`, { method: 'PATCH', body: { ...patch, updated_at: new Date().toISOString() }, prefer: 'return=minimal' }); refreshCounts().then(drawAll).catch(() => {}); }
+  try {
+    if (row.designId) await saveDesignDecision(row, patch);
+    else { await rest(`/rest/v1/hq_ai_handoffs?id=eq.${row.id}`, { method: 'PATCH', body: { ...patch, updated_at: new Date().toISOString() }, prefer: 'return=minimal' }); refreshCounts().then(drawAll).catch(() => {}); }
+  }
   catch (e) {
     Object.assign(row, before);
     const i = trash.items.indexOf(g); if (i >= 0) trash.items.splice(i, 1);
@@ -1866,8 +1944,16 @@ async function newNote(text) {
   } catch (e) { showToast("Couldn't save the idea", 'Check the connection and try again.', false); }
 }
 const docKey = (r) => [r.goal, r.result, r.next_recipient, r.file_name, r.status].join('|');
+const designRow = (d) => ({
+  id: `design:${d.id}`, designId: d.id, business: 'wb', worker: CODE_OF[d.made_by] || 'owner', next_recipient: null,
+  goal: `Etsy design: ${d.title}`, file_name: d.file_name, file_path: d.file_path, file_type: d.file_type, created_at: d.uploaded_at, status: 'ready_for_review', decision: null,
+  result: `New from the drop box (${String(d.file_type).toUpperCase()}). Completed = your OK to list it; HQ never lists anything on Etsy. Revised = say what to fix.`,
+});
 async function syncDocs() {
   const rows = await rest('/rest/v1/hq_ai_handoffs?select=id,business,worker,goal,result,status,next_recipient,file_name,created_at,decision,decision_note,decided_at&decision=is.null&status=in.(draft,ready_for_review)&order=created_at.desc&limit=20');
+  // Etsy files waiting in the drop-box approval queue go on the Etsy shelf too.
+  const waiting = (await rest('/rest/v1/hq_etsy_designs?select=id,title,file_path,file_name,file_type,made_by,uploaded_at&business_id=eq.wb&line=eq.etsy&status=eq.pending&order=uploaded_at.asc&limit=9').catch(() => [])) || [];
+  rows.push(...waiting.map(designRow));
   const ids = new Set(rows.map((r) => r.id));
   for (const g of [...docs]) {
     const u = g.userData, busy = u.heldBy || u.fly || u.glide || u.doc.state || !g.visible;
@@ -1922,9 +2008,10 @@ async function syncBoardroom() {
     if (o && o[0] && pendingNote === pn) {
       pendingNote = null;
       const note = String(o[0].message).slice(0, 2000);
-      await rest(`/rest/v1/hq_ai_handoffs?id=eq.${pn.id}`, { method: 'PATCH', body: { decision_note: note, updated_at: new Date().toISOString() }, prefer: 'return=minimal' });
+      if (!pn.designOnly) await rest(`/rest/v1/hq_ai_handoffs?id=eq.${pn.id}`, { method: 'PATCH', body: { decision_note: note, updated_at: new Date().toISOString() }, prefer: 'return=minimal' });
+      if (pn.designId) { await patchDesign(pn.designId, { status: 'revise', revision_note: note.slice(0, 1000) }); designWaitingNote.delete(pn.designId); }
       showToast('Revision note saved', `${pn.title}: "${note.slice(0, 50)}${note.length > 50 ? '…' : ''}"`, false);
-    } else if (Date.now() - Date.parse(pn.since) > 15 * 60 * 1000) pendingNote = null;
+    } else if (Date.now() - Date.parse(pn.since) > 15 * 60 * 1000) { pendingNote = null; if (pn.designId) { designWaitingNote.delete(pn.designId); showToast('No note heard', `${pn.title} is still waiting for you — send it back again and say what to fix.`, false); } }
   }
 }
 function drawSales(c, w, h) {
